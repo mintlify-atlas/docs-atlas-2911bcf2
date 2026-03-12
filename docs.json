@@ -94,7 +94,10 @@
               "api/ipc-overview",
               "api/launcher-ipc",
               "api/config-ipc",
-              "api/server-ipc"
+              "api/server-ipc",
+              "api/window-ipc",
+              "api/util-ipc",
+              "api/bootstrap-ipc"
             ]
           },
           {
