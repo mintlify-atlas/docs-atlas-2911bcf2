@@ -1,0 +1,651 @@
+---
+title: Renderer Process Architecture
+description: Frontend structure and UI implementation
+---
+
+## Overview
+
+The renderer process is the Chromium-based frontend that displays the launcher UI. It runs in a sandboxed web environment with no direct access to Node.js APIs.
+
+**Module System**: ES Modules (`import` / `export`)
+
+**Security Context**:
+- `nodeIntegration: false` — Cannot use `require()` or Node.js APIs
+- `contextIsolation: true` — Preload script runs in isolated context
+- Communication with main process: IPC via `window.launcher.*` (exposed by preload)
+
+## Application Structure
+
+```text
+renderer/
+├── index.html                 # Main window shell
+├── bootstrap.html             # Bootstrap window shell
+├── bootstrap-renderer.js      # Bootstrap UI logic
+├── helpers.js                 # DOM utilities
+├── app/
+│   └── init.js                # Application entry point
+├── store/
+│   └── state.js               # Application state
+├── data/
+│   ├── servers.js             # Server list
+│   ├── tips.js                # Tips & videos
+│   └── discord.js             # Discord invite link
+├── services/
+│   ├── configService.js       # Config UI sync
+│   ├── manifestClient.js      # Manifest loading
+│   └── ipcBridge.js           # IPC event listeners
+├── components/
+│   ├── titlebar.js            # Custom window controls
+│   ├── sidebar.js             # Tab navigation
+│   ├── loadingOverlay.js      # Loading screen
+│   └── serverCard.js          # Server card component
+└── pages/
+    ├── homePage.js            # Home tab
+    ├── modsPage.js            # Mods tab
+    ├── serversPage.js         # Servers tab
+    ├── tipsPage.js            # Tips tab
+    ├── discordPage.js         # Discord tab
+    └── settingsPage.js        # Settings tab
+```
+
+## Entry Point: init.js
+
+**File**: `src/renderer/app/init.js`
+
+Bootstraps the UI when DOM is ready:
+
+```javascript
+import { $ } from '../helpers.js';
+import { appState } from '../store/state.js';
+import { applyConfigToUI } from '../services/configService.js';
+import { loadManifest } from '../services/manifestClient.js';
+import { setupIpcListeners } from '../services/ipcBridge.js';
+import { setupTitlebar } from '../components/titlebar.js';
+import { setupSidebar } from '../components/sidebar.js';
+import { hideLoadingOverlay } from '../components/loadingOverlay.js';
+import { setupHomePage } from '../pages/homePage.js';
+import { setupServersPage, refreshServers } from '../pages/serversPage.js';
+import { setupDiscordPage } from '../pages/discordPage.js';
+import { setupSettingsPage } from '../pages/settingsPage.js';
+import { populateTipsTab } from '../pages/tipsPage.js';
+
+async function init() {
+  // Wire up UI components
+  setupTitlebar();
+  setupSidebar();
+  setupIpcListeners();
+  setupHomePage();
+  setupServersPage();
+  setupDiscordPage();
+  setupSettingsPage();
+
+  // Load config & system info
+  appState.sysInfo = await window.launcher.getSystemInfo();
+  appState.config = await window.launcher.loadConfig();
+
+  applyConfigToUI();
+
+  // Set RAM max slider
+  const maxRam = Math.min(appState.sysInfo.totalRam, 32768);
+  $('ram-slider').max = maxRam;
+  $('ram-max-label').textContent = Math.round(maxRam / 1024) + ' GB';
+  $('mc-dir-input').value = appState.config.minecraftDir || appState.sysInfo.launcherDir || '';
+
+  // Load manifest in background
+  loadManifest();
+
+  // Populate static tabs
+  populateTipsTab();
+  refreshServers();
+
+  // Hide loading overlay
+  hideLoadingOverlay();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+```
+
+## Helpers
+
+**File**: `src/renderer/helpers.js`
+
+Utility functions for DOM manipulation:
+
+```javascript
+// Shorthand for document.getElementById
+export function $(id) {
+  return document.getElementById(id);
+}
+
+// Escape HTML to prevent XSS
+export function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Append a log line to console
+export function logLine(msg, type = 'info') {
+  const console = $('log-console');
+  if (!console) return;
+  
+  const line = document.createElement('div');
+  line.className = `log-line log-${type}`;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  console.appendChild(line);
+  console.scrollTop = console.scrollHeight;
+}
+```
+
+## Application State
+
+**File**: `src/renderer/store/state.js`
+
+Global mutable state object:
+
+```javascript
+export const appState = {
+  config: {},              // User config from config.json
+  manifest: null,          // Server manifest (profiles, mods, news)
+  sysInfo: {},            // System info (platform, totalRam, launcherDir)
+  isLaunching: false,     // Launch in progress flag
+};
+```
+
+Mutated by services, read by pages/components.
+
+## Static Data
+
+### Servers
+
+**File**: `src/renderer/data/servers.js`
+
+```javascript
+export const SERVERS = [
+  { name: 'UmuCraft Modded', host: 'mc.umucraft.com', port: 25565 },
+  { name: 'UmuCraft Vanilla', host: 'vanilla.umucraft.com', port: 25565 },
+];
+```
+
+### Tips
+
+**File**: `src/renderer/data/tips.js`
+
+```javascript
+export const TIPS = [
+  {
+    title: 'Como Instalar Mods',
+    thumbnail: 'https://...',
+    url: 'https://youtube.com/...',
+    category: 'tutorial',
+  },
+  // ...
+];
+
+export const TIP_CATEGORIES = ['tutorial', 'gameplay', 'building', 'redstone'];
+```
+
+### Discord
+
+**File**: `src/renderer/data/discord.js`
+
+```javascript
+export const DISCORD_INVITE = 'https://discord.gg/...';
+```
+
+## Services
+
+### Config Service
+
+**File**: `src/renderer/services/configService.js`
+
+Syncs config between state and UI elements:
+
+```javascript
+import { $} from '../helpers.js';
+import { appState } from '../store/state.js';
+
+// Apply loaded config to UI inputs
+export function applyConfigToUI() {
+  const cfg = appState.config;
+  
+  $('username-input').value = cfg.username || '';
+  $('ram-slider').value = cfg.ram || 4096;
+  $('ram-value').textContent = Math.round((cfg.ram || 4096) / 1024) + ' GB';
+  $('profile-select').value = cfg.selectedProfile || 'Default';
+  $('mc-dir-input').value = cfg.minecraftDir || '';
+}
+
+// Collect config from UI inputs
+export function collectConfig() {
+  return {
+    username: $('username-input').value.trim(),
+    ram: parseInt($('ram-slider').value, 10),
+    selectedProfile: $('profile-select').value,
+    minecraftDir: $('mc-dir-input').value,
+    profiles: appState.config.profiles || [],
+  };
+}
+```
+
+### Manifest Client
+
+**File**: `src/renderer/services/manifestClient.js`
+
+Fetches manifest and populates UI:
+
+```javascript
+import { appState } from '../store/state.js';
+import { $ } from '../helpers.js';
+import { populateModsTab } from '../pages/modsPage.js';
+
+export async function loadManifest(useCache = true) {
+  const result = await window.launcher.fetchManifest();
+  
+  if (result.ok) {
+    appState.manifest = result.manifest;
+    updateVersionBadges();
+    populateModsTab();
+    populateNewsTab();
+    
+    if (result.cached) {
+      console.log('Using cached manifest (offline mode)');
+    }
+  } else {
+    console.error('Failed to load manifest:', result.error);
+  }
+}
+
+export function updateVersionBadges() {
+  const manifest = appState.manifest;
+  if (!manifest) return;
+  
+  const profile = manifest.profiles?.[appState.config.selectedProfile] || manifest;
+  
+  $('mc-version-badge').textContent = profile.minecraftVersion || '?';
+  $('forge-version-badge').textContent = profile.forgeVersion || 'None';
+  $('mods-version-badge').textContent = profile.modsVersion || '?';
+}
+```
+
+### IPC Bridge
+
+**File**: `src/renderer/services/ipcBridge.js`
+
+Listens to IPC events from main process:
+
+```javascript
+import { $, logLine } from '../helpers.js';
+
+export function setupIpcListeners() {
+  window.launcher.on('log', (msg) => {
+    logLine(msg);
+  });
+
+  window.launcher.on('status', (msg) => {
+    $('progress-phase').textContent = msg;
+    logLine(msg);
+  });
+
+  window.launcher.on('phase', (phase) => {
+    const labels = {
+      'java': 'Checking Java...',
+      'mods': 'Syncing mods...',
+      'launch': 'Starting Minecraft...',
+    };
+    if (labels[phase]) {
+      $('progress-phase').textContent = labels[phase];
+    }
+  });
+
+  window.launcher.on('download-progress', ({ label, percent, downloaded, total }) => {
+    $('progress-bar').style.width = percent + '%';
+    $('progress-pct').textContent = percent + '%';
+    const mb = (downloaded / 1024 / 1024).toFixed(1);
+    const totalMb = (total / 1024 / 1024).toFixed(1);
+    $('progress-file').textContent = `${label} — ${mb} MB / ${totalMb} MB`;
+  });
+
+  window.launcher.on('sync-progress', ({ current, total, filename, percent }) => {
+    $('progress-bar').style.width = percent + '%';
+    $('progress-pct').textContent = percent + '%';
+    $('progress-file').textContent = `Checking: ${filename} (${current}/${total})`;
+  });
+
+  window.launcher.on('launched', ({ pid }) => {
+    logLine(`Game launched! PID: ${pid}`, 'success');
+  });
+}
+```
+
+## Components
+
+### Titlebar
+
+**File**: `src/renderer/components/titlebar.js`
+
+Custom window controls (since `frame: false`):
+
+```javascript
+import { $ } from '../helpers.js';
+
+export function setupTitlebar() {
+  $('minimize-btn').addEventListener('click', () => {
+    window.launcher.minimize();
+  });
+
+  $('maximize-btn').addEventListener('click', () => {
+    window.launcher.maximize();
+  });
+
+  $('close-btn').addEventListener('click', () => {
+    window.launcher.close();
+  });
+}
+```
+
+### Sidebar
+
+**File**: `src/renderer/components/sidebar.js`
+
+Tab navigation:
+
+```javascript
+import { $ } from '../helpers.js';
+
+export function setupSidebar() {
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Remove active class from all buttons and tabs
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      
+      // Add active class to clicked button and corresponding tab
+      btn.classList.add('active');
+      const tab = $('tab-' + btn.dataset.tab);
+      if (tab) tab.classList.add('active');
+    });
+  });
+}
+```
+
+HTML structure:
+
+```html
+<div class="sidebar">
+  <button class="nav-btn active" data-tab="home">Home</button>
+  <button class="nav-btn" data-tab="mods">Mods</button>
+  <button class="nav-btn" data-tab="servers">Servers</button>
+  <button class="nav-btn" data-tab="tips">Tips</button>
+  <button class="nav-btn" data-tab="discord">Discord</button>
+  <button class="nav-btn" data-tab="settings">Settings</button>
+</div>
+
+<div class="content">
+  <div id="tab-home" class="tab active">...</div>
+  <div id="tab-mods" class="tab">...</div>
+  <!-- ... -->
+</div>
+```
+
+### Loading Overlay
+
+**File**: `src/renderer/components/loadingOverlay.js`
+
+```javascript
+import { $ } from '../helpers.js';
+
+export function showLoadingOverlay(message = 'Loading...') {
+  const overlay = $('loading-overlay');
+  if (overlay) {
+    $('loading-message').textContent = message;
+    overlay.style.display = 'flex';
+  }
+}
+
+export function hideLoadingOverlay() {
+  const overlay = $('loading-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+```
+
+### Server Card
+
+**File**: `src/renderer/components/serverCard.js`
+
+Dynamic component for server list:
+
+```javascript
+export function createServerCard(server) {
+  const card = document.createElement('div');
+  card.className = 'server-card';
+  card.innerHTML = `
+    <div class="server-header">
+      <h3>${escapeHtml(server.name)}</h3>
+      <span class="status-dot status-unknown"></span>
+    </div>
+    <div class="server-address">${escapeHtml(server.host)}:${server.port}</div>
+    <div class="server-players">Checking...</div>
+  `;
+  return card;
+}
+
+export function updateServerCard(card, pingResult) {
+  const dot = card.querySelector('.status-dot');
+  const players = card.querySelector('.server-players');
+  
+  if (pingResult.online) {
+    dot.className = 'status-dot status-online';
+    players.textContent = `${pingResult.players.online}/${pingResult.players.max} players`;
+  } else {
+    dot.className = 'status-dot status-offline';
+    players.textContent = 'Offline';
+  }
+}
+```
+
+## Pages (Tabs)
+
+Each tab has a corresponding page module that handles setup and logic.
+
+### Home Page
+
+**File**: `src/renderer/pages/homePage.js`
+
+```javascript
+import { $, logLine } from '../helpers.js';
+import { appState } from '../store/state.js';
+import { collectConfig } from '../services/configService.js';
+import { loadManifest, updateVersionBadges } from '../services/manifestClient.js';
+
+export function setupHomePage() {
+  // Launch button
+  $('launch-btn').addEventListener('click', startLaunch);
+
+  // Profile selector
+  $('profile-select').addEventListener('change', () => {
+    appState.config.selectedProfile = $('profile-select').value;
+    updateVersionBadges();
+  });
+
+  // Username input (only allow valid MC characters)
+  $('username-input').addEventListener('input', () => {
+    $('username-input').value = $('username-input').value.replace(/[^a-zA-Z0-9_]/g, '');
+  });
+
+  // Refresh manifest button
+  $('refresh-manifest-btn').addEventListener('click', () => loadManifest(false));
+}
+
+async function startLaunch() {
+  if (appState.isLaunching) return;
+  
+  const username = $('username-input').value.trim();
+  if (!username) {
+    $('username-input').focus();
+    return;
+  }
+
+  appState.isLaunching = true;
+  appState.config = collectConfig();
+  await window.launcher.saveConfig(appState.config);
+
+  const btn = $('launch-btn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.querySelector('.launch-btn-text').textContent = 'PREPARING...';
+
+  $('log-console').innerHTML = '';
+  $('progress-bar').style.width = '0%';
+  $('progress-panel').style.display = 'block';
+
+  const result = await window.launcher.syncAndLaunch({
+    config: appState.config,
+    manifest: appState.manifest,
+  });
+
+  if (result.ok) {
+    $('progress-phase').textContent = 'Minecraft launched!';
+    $('progress-bar').style.width = '100%';
+    logLine('Minecraft started successfully! PID: ' + result.pid, 'success');
+    btn.querySelector('.launch-btn-text').textContent = 'IN GAME';
+    
+    setTimeout(() => {
+      appState.isLaunching = false;
+      btn.disabled = false;
+      btn.classList.remove('loading');
+      btn.querySelector('.launch-btn-text').textContent = 'PLAY';
+    }, 5000);
+  } else {
+    logLine('ERROR: ' + result.error, 'error');
+    appState.isLaunching = false;
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.querySelector('.launch-btn-text').textContent = 'PLAY';
+  }
+}
+```
+
+### Servers Page
+
+**File**: `src/renderer/pages/serversPage.js`
+
+```javascript
+import { $ } from '../helpers.js';
+import { SERVERS } from '../data/servers.js';
+import { createServerCard, updateServerCard } from '../components/serverCard.js';
+
+export function setupServersPage() {
+  const container = $('servers-container');
+  
+  SERVERS.forEach(server => {
+    const card = createServerCard(server);
+    card.dataset.host = server.host;
+    card.dataset.port = server.port;
+    container.appendChild(card);
+  });
+}
+
+export async function refreshServers() {
+  const cards = document.querySelectorAll('.server-card');
+  
+  for (const card of cards) {
+    const host = card.dataset.host;
+    const port = parseInt(card.dataset.port, 10);
+    
+    const result = await window.launcher.pingServer({ host, port });
+    updateServerCard(card, result);
+  }
+}
+```
+
+### Settings Page
+
+**File**: `src/renderer/pages/settingsPage.js`
+
+```javascript
+import { $, logLine } from '../helpers.js';
+import { appState } from '../store/state.js';
+import { collectConfig } from '../services/configService.js';
+
+export function setupSettingsPage() {
+  // RAM slider
+  $('ram-slider').addEventListener('input', () => {
+    const ram = parseInt($('ram-slider').value, 10);
+    $('ram-value').textContent = Math.round(ram / 1024) + ' GB';
+  });
+
+  // Browse directory button
+  $('browse-dir-btn').addEventListener('click', async () => {
+    const dir = await window.launcher.browseMinecraftDir();
+    if (dir) {
+      $('mc-dir-input').value = dir;
+    }
+  });
+
+  // Open folder button
+  $('open-folder-btn').addEventListener('click', () => {
+    window.launcher.openFolder(appState.sysInfo.launcherDir);
+  });
+
+  // Save settings button
+  $('save-settings-btn').addEventListener('click', async () => {
+    appState.config = collectConfig();
+    await window.launcher.saveConfig(appState.config);
+    logLine('Settings saved!', 'success');
+  });
+}
+```
+
+### Other Pages
+
+| Page | File | Purpose |
+|------|------|--------|
+| **Mods** | `modsPage.js` | Populate mod grid from manifest |
+| **Tips** | `tipsPage.js` | Display video tutorials by category |
+| **Discord** | `discordPage.js` | Discord invite button |
+
+## Six Tab Structure
+
+The launcher UI consists of six main tabs:
+
+1. **Home** (`tab-home`)
+   - Server info banner (name, description, tags)
+   - Version badges (Minecraft, Forge, Mods)
+   - Profile dropdown selector
+   - Username input
+   - Launch button
+   - Progress panel (phase, progress bar, console log)
+   - News feed
+
+2. **Mods** (`tab-mods`)
+   - Grid of mod cards grouped by modpack
+   - Mod name, version, description
+   - Auto-populated from manifest
+
+3. **Servers** (`tab-servers`)
+   - Server cards with real-time ping
+   - Status indicator (online/offline)
+   - Player count (online/max)
+   - Server address
+
+4. **Tips** (`tab-tips`)
+   - Video tutorial cards
+   - Category filters (tutorial, gameplay, building, redstone)
+   - Thumbnail, title, click to open in browser
+
+5. **Discord** (`tab-discord`)
+   - Server description
+   - Join Discord button (opens invite link)
+
+6. **Settings** (`tab-settings`)
+   - RAM slider (512 MB - max RAM)
+   - Minecraft directory input + browse button
+   - Java path display (read-only)
+   - Open launcher folder button
+   - Save settings button
+
+## Next Steps
+
+- [IPC Communication](/architecture/ipc-communication) — How processes communicate
+- [Main Process Architecture](/architecture/main-process) — Backend deep dive

@@ -1,0 +1,305 @@
+---
+title: Server Configuration
+description: Configure server list, Discord integration, and launcher customization
+---
+
+Beyond mod synchronization, Umucraft Launcher includes a server ping system and Discord integration to keep your community connected. This guide covers how to configure these features.
+
+## Server List Configuration
+
+The launcher includes a **Servers** tab that displays your Minecraft servers with real-time ping status.
+
+### Editing the Server List
+
+Edit `src/renderer/data/servers.js` to configure which servers appear in the launcher:
+
+```javascript src/renderer/data/servers.js
+export const SERVERS = [
+  { name: 'Umucraft Modded 2026', host: 'plus-07.bedhosting.com.br', port: 21236 },
+  { name: 'UmuCraft Vanilla', host: 'vanilla.umucraft.com', port: 25565 },
+];
+```
+
+### Server Object Schema
+
+Each server object requires three fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Display name shown in the launcher |
+| `host` | string | Yes | Server hostname or IP address |
+| `port` | number | Yes | Server port (default Minecraft: 25565) |
+
+### Adding Multiple Servers
+
+You can add as many servers as you want:
+
+```javascript src/renderer/data/servers.js
+export const SERVERS = [
+  { 
+    name: 'Main Server - Survival', 
+    host: 'survival.myserver.com', 
+    port: 25565 
+  },
+  { 
+    name: 'Creative Server', 
+    host: 'creative.myserver.com', 
+    port: 25566 
+  },
+  { 
+    name: 'Test Server', 
+    host: '192.168.1.100', 
+    port: 25565 
+  },
+  { 
+    name: 'Event Server', 
+    host: 'events.myserver.com', 
+    port: 25567 
+  },
+];
+```
+
+### Server Ping System
+
+The launcher automatically pings each server to display:
+
+- ✅ **Online** - Server is reachable and responding
+- ⏱️ **Latency** - Response time in milliseconds
+- 👥 **Player count** - Current players / max players
+- ❌ **Offline** - Server is unreachable
+
+The ping is performed when players navigate to the Servers tab and updates in real-time.
+
+### How Server Ping Works
+
+The launcher uses a TCP connection to query the Minecraft server protocol:
+
+1. Opens a socket connection to `host:port`
+2. Sends a Server List Ping packet
+3. Receives the server status JSON
+4. Extracts player count, version, and MOTD
+5. Calculates round-trip time
+
+This is implemented in `src/main/services/serverPingService.js`.
+
+<Note>
+Server ping only works if your server is accessible from the player's network. Ensure firewall rules allow connections on your server port.
+</Note>
+
+## Discord Integration
+
+The launcher includes a **Discord** tab with a direct invite link to your community Discord server.
+
+### Configuring the Discord Invite
+
+Edit `src/renderer/data/discord.js`:
+
+```javascript src/renderer/data/discord.js
+export const DISCORD_INVITE = 'https://discord.gg/D3H7qt9x9B';
+```
+
+Simply replace the URL with your Discord server's invite link.
+
+### Creating a Discord Invite Link
+
+<Steps>
+  <Step title="Open Discord Server Settings">
+    1. Open Discord and navigate to your server
+    2. Click the server name → **Server Settings**
+    3. Go to **Invites** in the left sidebar
+  </Step>
+
+  <Step title="Create a new invite">
+    Click **Create a new invite** or edit an existing one.
+  </Step>
+
+  <Step title="Configure invite settings">
+    Recommended settings for launcher integration:
+    
+    - **Expire after:** Never
+    - **Max number of uses:** No limit
+    - **Temporary membership:** OFF
+    
+    This ensures the link works permanently for all players.
+  </Step>
+
+  <Step title="Copy the invite link">
+    Copy the generated invite URL (e.g., `https://discord.gg/ABC123XYZ`).
+  </Step>
+
+  <Step title="Update the launcher">
+    Paste the invite URL into `src/renderer/data/discord.js`:
+    
+    ```javascript
+    export const DISCORD_INVITE = 'https://discord.gg/ABC123XYZ';
+    ```
+  </Step>
+</Steps>
+
+### Discord Page Behavior
+
+When players click the Discord tab:
+
+1. They see a large Discord icon and server information
+2. Clicking **"Join Discord"** opens the invite link in their default browser
+3. If Discord is installed, it automatically opens in the Discord app
+
+## Customizing Server Branding
+
+You can customize how your server appears in the launcher through the manifest.json file.
+
+### Server Name and Description
+
+Edit your `manifest.json`:
+
+```json manifest.json
+{
+  "serverName": "MyServer Network",
+  "description": "Premium Survival server with custom mods and economy",
+  "tags": ["Forge 1.20.1", "Survival", "Economy", "PvE"],
+  // ...
+}
+```
+
+These values appear on the launcher's **Home** tab:
+
+- `serverName` - Large heading at the top
+- `description` - Subtitle below the server name
+- `tags` - Badge pills (e.g., version, mode, features)
+
+### Adding Custom Tags
+
+Tags can include any relevant information:
+
+```json
+"tags": [
+  "Forge 1.20.1",        // Minecraft version
+  "Survival",             // Game mode
+  "Economy",              // Features
+  "Towny",                // Plugins/Mods
+  "English/Spanish",      // Languages
+  "18+ Community"         // Age requirement
+]
+```
+
+Tags are rendered as colored badges and help set player expectations.
+
+## Tips and Videos
+
+The launcher includes a **Tips** tab where you can showcase:
+
+- Modpack tutorials
+- Server rules videos
+- Build showcases
+- How-to guides
+
+### Configuring Tips
+
+Edit `src/renderer/data/tips.js`:
+
+```javascript src/renderer/data/tips.js
+export const TIPS = [
+  {
+    title: 'Getting Started Guide',
+    thumbnail: 'https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg',
+    url: 'https://youtube.com/watch?v=VIDEO_ID',
+    category: 'Tutorials',
+  },
+  {
+    title: 'Server Rules',
+    thumbnail: 'https://i.imgur.com/EXAMPLE.png',
+    url: 'https://yourserver.com/rules',
+    category: 'Information',
+  },
+  {
+    title: 'How to Use Create Mod',
+    thumbnail: 'https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg',
+    url: 'https://youtube.com/watch?v=VIDEO_ID',
+    category: 'Mods',
+  },
+];
+```
+
+### Tips Object Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | string | Card title |
+| `thumbnail` | string | Image URL (YouTube thumbnails work great) |
+| `url` | string | Link when clicked (video, webpage, etc.) |
+| `category` | string | Grouping category (e.g., "Tutorials", "Mods") |
+
+<Note>
+For YouTube videos, you can use the auto-generated thumbnail URL:
+`https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg`
+</Note>
+
+## Rebuilding After Changes
+
+After modifying any configuration files in `src/`, you must rebuild the launcher:
+
+<CodeGroup>
+  ```bash Development (Testing)
+  npm run dev
+  ```
+  
+  ```bash Production (Windows)
+  npm run build
+  ```
+  
+  ```bash Production (Linux)
+  npm run build:linux
+  ```
+  
+  ```bash Production (macOS)
+  npm run build:mac
+  ```
+</CodeGroup>
+
+The built installer will be in the `dist/` folder.
+
+<Warning>
+Configuration changes (servers, Discord, tips) are **compiled into the launcher executable**. You must redistribute the new launcher to players for them to see the changes.
+
+Only the `manifest.json` updates automatically without rebuilding.
+</Warning>
+
+## Configuration Checklist
+
+Before distributing your launcher, verify:
+
+- [ ] `MANIFEST_URL` is set in `src/main/utils/paths.js`
+- [ ] `DEFAULT_PROFILE` matches a profile in your manifest.json
+- [ ] Server list in `src/renderer/data/servers.js` is up to date
+- [ ] Discord invite in `src/renderer/data/discord.js` is correct
+- [ ] Tips/videos in `src/renderer/data/tips.js` are populated (optional)
+- [ ] manifest.json has correct server name, description, and tags
+- [ ] All mods.zip files are uploaded and accessible
+- [ ] Manifest.json is hosted at the configured URL
+
+## Advanced: Environment-Specific Builds
+
+If you manage multiple servers (e.g., test and production), you can maintain separate branches:
+
+```bash
+git checkout -b production
+# Edit configs for production server
+git commit -am "Production config"
+
+git checkout -b staging  
+# Edit configs for staging server
+git commit -am "Staging config"
+```
+
+Build from the appropriate branch when distributing launchers.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build the Launcher" icon="hammer" href="/admins/building">
+    Create distributable executables
+  </Card>
+  <Card title="Update Mods" icon="refresh" href="/admins/mod-updates">
+    Learn how to push mod updates
+  </Card>
+</CardGroup>

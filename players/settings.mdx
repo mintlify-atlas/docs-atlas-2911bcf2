@@ -1,0 +1,357 @@
+---
+title: 'Settings'
+description: 'Configure RAM allocation, directories, and profiles in Umucraft Launcher'
+---
+
+## Settings Overview
+
+The Settings page allows you to configure launcher behavior, allocate memory, and manage directories. All settings are automatically saved when you click the save button.
+
+## Accessing Settings
+
+The Settings page is available through the launcher's settings tab. Configuration changes are applied immediately when saved and persist across launcher sessions.
+
+## RAM Allocation
+
+RAM allocation controls how much memory Minecraft can use. Proper RAM allocation is crucial for smooth gameplay, especially with modpacks.
+
+### Using the RAM Slider
+
+The launcher provides a slider control for memory allocation:
+
+```javascript
+function setupRamSlider() {
+  const slider = $('ram-slider');
+  slider.addEventListener('input', () => {
+    const val = parseInt(slider.value, 10);
+    $('ram-display').textContent = val + ' MB';
+    if (appState.sysInfo.totalRam && val > appState.sysInfo.totalRam * 0.75) {
+      $('ram-display').style.color = '#e3b341';
+    } else {
+      $('ram-display').style.color = '';
+    }
+  });
+}
+```
+
+<Steps>
+  <Step title="Locate RAM Slider">
+    Find the **ram-slider** control on the Settings page.
+  </Step>
+
+  <Step title="Adjust Memory">
+    Drag the slider to set your desired RAM allocation in megabytes (MB).
+    
+    The **ram-display** shows the current value as you move the slider.
+  </Step>
+
+  <Step title="Monitor Warning">
+    If you allocate more than 75% of your system's total RAM, the display turns yellow (#e3b341) to warn you.
+    
+    <Warning>
+    Allocating too much RAM can cause system instability and poor performance. Leave sufficient memory for your operating system and other applications.
+    </Warning>
+  </Step>
+
+  <Step title="Save Settings">
+    Click **Salvar configuracoes** (Save settings) to apply your changes.
+  </Step>
+</Steps>
+
+### RAM Allocation Guidelines
+
+**Minimum Recommendations**:
+- Vanilla Minecraft: 2048 MB (2 GB)
+- Light modpacks: 4096 MB (4 GB)
+- Heavy modpacks: 6144-8192 MB (6-8 GB)
+
+**Maximum Recommendations**:
+- Do not exceed 75% of total system RAM
+- Leave at least 2-4 GB for the operating system
+- Monitor performance and adjust as needed
+
+<Info>
+The launcher automatically detects your system's total RAM and provides visual warnings when you approach the 75% threshold.
+</Info>
+
+## Directory Settings
+
+Directory settings control where Minecraft and launcher files are stored.
+
+### Minecraft Directory
+
+The Minecraft directory stores:
+- Game files
+- Mods
+- Saves
+- Resource packs
+- Screenshots
+- Configuration files
+
+### Changing Minecraft Directory
+
+You can customize the Minecraft installation location:
+
+```javascript
+$('browse-dir-btn').addEventListener('click', async () => {
+  const dir = await window.launcher.browseMinecraftDir();
+  if (dir) $('mc-dir-input').value = dir;
+});
+```
+
+<Steps>
+  <Step title="Click Browse Button">
+    Click the **Browse Directory** button next to the Minecraft directory field.
+  </Step>
+
+  <Step title="Select Directory">
+    A file browser dialog opens. Navigate to and select your desired Minecraft directory.
+  </Step>
+
+  <Step title="Confirm Selection">
+    The selected path appears in the **mc-dir-input** field.
+  </Step>
+
+  <Step title="Save Settings">
+    Click **Salvar configuracoes** to apply the directory change.
+  </Step>
+</Steps>
+
+<Warning>
+Changing the Minecraft directory will require re-downloading game files and mods to the new location. Your existing saves and configurations in the old directory won't be automatically moved.
+</Warning>
+
+### Opening Launcher Directory
+
+Quickly access the launcher's data directory:
+
+```javascript
+$('open-launcher-dir-btn').addEventListener('click', () => {
+  window.launcher.openFolder();
+});
+```
+
+Click the **Open Launcher Directory** button to open the launcher's data folder in your system file manager. This folder contains:
+
+- Configuration files
+- Logs
+- Cached manifests
+- Temporary files
+
+<Note>
+Opening the launcher directory is useful for troubleshooting, accessing logs, or manually editing configuration files.
+</Note>
+
+## Profile Selection
+
+Profiles represent different modpack configurations with specific Minecraft and Forge versions.
+
+### Selecting a Profile
+
+Profiles can be selected on the home page:
+
+```javascript
+$('profile-select').addEventListener('change', () => {
+  appState.config.selectedProfile = $('profile-select').value;
+  updateVersionBadges();
+});
+```
+
+**What happens when you change profiles**:
+- The selected profile is stored in your configuration
+- Version badges update to show the profile's versions
+- Next launch uses the new profile's settings
+- Mods are automatically synced for the selected profile
+
+### Profile Information
+
+Each profile contains:
+- **Minecraft version**: Specific game version
+- **Forge version**: Mod loader version (if applicable)
+- **Mods version**: Version of the mod pack
+- **Mods package**: URL to the mod ZIP file
+
+You can view profile details on the **Mods** tab.
+
+<Info>
+Profiles are configured server-side in the manifest file. Players cannot create custom profiles but can switch between available ones.
+</Info>
+
+## Saving Settings
+
+All settings must be saved to take effect:
+
+```javascript
+$('save-settings-btn').addEventListener('click', async () => {
+  appState.config = collectConfig();
+  await window.launcher.saveConfig(appState.config);
+  $('save-settings-btn').textContent = 'Salvo!';
+  setTimeout(() => $('save-settings-btn').textContent = 'Salvar configuracoes', 2000);
+});
+```
+
+<Steps>
+  <Step title="Make Changes">
+    Adjust RAM allocation, directories, or other settings as desired.
+  </Step>
+
+  <Step title="Click Save Button">
+    Click the **Salvar configuracoes** (Save settings) button at the bottom of the settings page.
+  </Step>
+
+  <Step title="Confirmation">
+    The button text changes to **Salvo!** (Saved!) for 2 seconds to confirm the settings were saved successfully.
+  </Step>
+
+  <Step title="Settings Applied">
+    Your configuration is written to disk and will be used for all future launches.
+  </Step>
+</Steps>
+
+### What Gets Saved
+
+The `collectConfig()` function gathers all settings:
+
+```javascript
+appState.config = collectConfig();
+await window.launcher.saveConfig(appState.config);
+```
+
+**Saved configuration includes**:
+- Selected profile
+- RAM allocation
+- Minecraft directory path
+- Username
+- Any other launcher preferences
+
+<Note>
+Settings are saved to a configuration file in the launcher directory. This file persists across launcher restarts and updates.
+</Note>
+
+## Configuration Persistence
+
+Your settings are automatically loaded when the launcher starts:
+
+- **On Startup**: Configuration file is read and applied
+- **During Session**: Settings remain in memory (appState.config)
+- **On Save**: Configuration is written to disk
+- **On Launch**: Current settings are used for game launch
+
+## Username Configuration
+
+While the username field appears on the home page, it's part of your saved configuration:
+
+```javascript
+$('username-input').addEventListener('input', () => {
+  $('username-input').value = $('username-input').value.replace(/[^a-zA-Z0-9_]/g, '');
+});
+```
+
+**Username rules**:
+- Only alphanumeric characters and underscores
+- Invalid characters are automatically removed
+- Saved with other configuration settings
+- Used for all game launches
+
+<Info>
+Your username is saved as part of your configuration and persists across launcher sessions. You don't need to re-enter it each time.
+</Info>
+
+## Troubleshooting Settings
+
+### Settings Not Saving
+
+If settings don't persist:
+
+<Steps>
+  <Step title="Verify Save Click">
+    Ensure you clicked the **Salvar configuracoes** button after making changes.
+  </Step>
+  
+  <Step title="Check Permissions">
+    Verify the launcher has write permissions to its data directory.
+  </Step>
+  
+  <Step title="Review Logs">
+    Check the launcher directory for error logs.
+  </Step>
+  
+  <Step title="Restart Launcher">
+    Close and reopen the launcher to confirm settings persisted.
+  </Step>
+</Steps>
+
+### RAM Allocation Issues
+
+If you experience performance problems:
+
+**Too Little RAM**:
+- Game stutters or freezes
+- Frequent garbage collection
+- "Out of memory" errors
+
+**Solution**: Increase RAM allocation
+
+**Too Much RAM**:
+- System slowdown
+- Other applications lag
+- Operating system instability
+
+**Solution**: Reduce RAM allocation to below 75% of total system memory
+
+<Warning>
+Always leave sufficient RAM for your operating system. The 75% threshold warning helps prevent system instability.
+</Warning>
+
+### Directory Path Issues
+
+If the Minecraft directory path is invalid:
+
+- The launcher may fail to launch the game
+- Mods may not sync properly
+- Game files may not be found
+
+**Solution**:
+1. Use the **Browse Directory** button to select a valid path
+2. Ensure the directory exists and is writable
+3. Save settings after changing the path
+4. Restart the launcher
+
+### Profile Not Updating
+
+If profile changes don't take effect:
+
+- Profile changes on the home page are immediate
+- The settings page doesn't directly control profile selection
+- Change profiles using the **profile-select** dropdown on the home page
+- Version badges update automatically when you switch profiles
+
+<Info>
+Profile selection happens on the home page, not the settings page. Settings save button applies to RAM, directories, and other launcher preferences.
+</Info>
+
+## Advanced Configuration
+
+### Manual Config Editing
+
+For advanced users, the configuration file can be manually edited:
+
+1. Close the launcher
+2. Click **Open Launcher Directory** button (or navigate to it manually)
+3. Edit the configuration file with a text editor
+4. Save changes
+5. Restart the launcher
+
+<Warning>
+Manual configuration editing should only be done by advanced users. Invalid JSON or incorrect values may prevent the launcher from starting.
+</Warning>
+
+### Configuration Backup
+
+To backup your settings:
+
+1. Open the launcher directory
+2. Copy the configuration file to a safe location
+3. Restore by replacing the file if needed
+
+This preserves your RAM settings, directory paths, and profile preferences.

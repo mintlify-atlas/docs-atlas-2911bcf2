@@ -1,0 +1,416 @@
+---
+title: Customization Guide
+description: Customize the Umucraft Launcher for your own Minecraft server
+---
+
+## Overview
+
+The Umucraft Launcher is designed to be easily customized for different Minecraft servers. This guide covers all customization points including branding, server configuration, and behavior modifications.
+
+## Manifest URL Configuration
+
+The most critical configuration is the manifest URL, which determines where the launcher downloads mod pack information.
+
+<Steps>
+  <Step title="Open paths.js">
+    Navigate to `src/main/utils/paths.js`
+  </Step>
+
+  <Step title="Update the MANIFEST_URL">
+    Modify the `CONFIG` object:
+
+    ```javascript src/main/utils/paths.js
+    const CONFIG = {
+      MANIFEST_URL: 'https://your-url.com/manifest.json',
+      DEFAULT_PROFILE: 'Default',
+    };
+    ```
+
+    ### Hosting Options
+
+    **Dropbox (Recommended for beginners)**
+    ```javascript
+    MANIFEST_URL: 'https://www.dropbox.com/scl/fi/XXX/manifest.json?rlkey=YYY&dl=1'
+    ```
+    <Note>Change `?dl=0` to `?dl=1` in Dropbox share links</Note>
+
+    **GitHub Raw**
+    ```javascript
+    MANIFEST_URL: 'https://raw.githubusercontent.com/user/repo/main/manifest.json'
+    ```
+
+    **Self-Hosted**
+    ```javascript
+    MANIFEST_URL: 'https://yourserver.com/launcher/manifest.json'
+    ```
+  </Step>
+
+  <Step title="Update default profile (optional)">
+    If your manifest uses a different profile name:
+
+    ```javascript
+    const CONFIG = {
+      MANIFEST_URL: 'https://your-url.com/manifest.json',
+      DEFAULT_PROFILE: 'YourProfileName',  // Must match manifest.json
+    };
+    ```
+  </Step>
+</Steps>
+
+## Server List Configuration
+
+Configure which Minecraft servers appear in the Servers tab with ping functionality.
+
+<Steps>
+  <Step title="Open servers.js">
+    Navigate to `src/renderer/data/servers.js`
+  </Step>
+
+  <Step title="Edit the SERVERS array">
+    ```javascript src/renderer/data/servers.js
+    export const SERVERS = [
+      { 
+        name: 'My Modded Server', 
+        host: 'mc.myserver.com', 
+        port: 25565 
+      },
+      { 
+        name: 'Creative Server', 
+        host: 'creative.myserver.com', 
+        port: 25566 
+      },
+      { 
+        name: 'Vanilla Server', 
+        host: 'vanilla.myserver.com', 
+        port: 25565 
+      },
+    ];
+    ```
+
+    ### Server Object Properties
+
+    | Property | Type | Description |
+    |----------|------|-------------|
+    | `name` | string | Display name shown in the launcher |
+    | `host` | string | Server hostname or IP address |
+    | `port` | number | Server port (usually 25565) |
+  </Step>
+
+  <Step title="Test server connectivity">
+    The launcher will ping servers automatically when the Servers tab is opened. Ensure:
+    - Servers are online
+    - Ports are not firewalled
+    - Hostnames resolve correctly
+  </Step>
+</Steps>
+
+## Discord Integration
+
+Customize the Discord invite link shown in the Discord tab.
+
+<Steps>
+  <Step title="Open discord.js">
+    Navigate to `src/renderer/data/discord.js`
+  </Step>
+
+  <Step title="Update the invite URL">
+    ```javascript src/renderer/data/discord.js
+    export const DISCORD_INVITE = 'https://discord.gg/YOUR_INVITE_CODE';
+    ```
+
+    <Tip>
+      Create a permanent invite link in your Discord server settings before updating this value.
+    </Tip>
+  </Step>
+</Steps>
+
+## Color Theme Customization
+
+The launcher uses CSS custom properties for theming, making it easy to change colors throughout the interface.
+
+<Steps>
+  <Step title="Open variables.css">
+    Navigate to `src/renderer/styles/variables.css`
+  </Step>
+
+  <Step title="Customize color variables">
+    ```css src/renderer/styles/variables.css
+    :root {
+      /* Background Colors */
+      --bg-deep:    #080c10;    /* Darkest background */
+      --bg-dark:    #0d1117;    /* Main background */
+      --bg-card:    #161b22;    /* Card/panel background */
+      --bg-hover:   #1c2333;    /* Hover state background */
+      
+      /* Border Colors */
+      --border:     #30363d;    /* Standard borders */
+      --border-bright: #4ade8055;  /* Accent borders (with opacity) */
+      
+      /* Accent Colors */
+      --accent:     #4ade80;    /* Primary accent (green) */
+      --accent-dim: #4ade8044;  /* Dimmed accent */
+      --accent-glow:#4ade8022;  /* Glow effect */
+      
+      /* Feature Colors */
+      --forge:      #f97316;    /* Forge orange */
+      --java-col:   #60a5fa;    /* Java blue */
+      --discord:    #5865F2;    /* Discord blurple */
+      
+      /* Text Colors */
+      --text:       #e6edf3;    /* Primary text */
+      --text-dim:   #8b949e;    /* Secondary text */
+      --text-muted: #484f58;    /* Muted text */
+      
+      /* Status Colors */
+      --danger:     #f85149;    /* Error/danger red */
+      --warn:       #e3b341;    /* Warning yellow */
+      
+      /* Layout */
+      --radius:     8px;        /* Border radius */
+      --titlebar:   32px;       /* Title bar height */
+      --sidebar:    64px;       /* Sidebar width */
+      
+      /* Typography */
+      --font-main:  'Rajdhani', sans-serif;
+      --font-mono:  'Share Tech Mono', monospace;
+    }
+    ```
+  </Step>
+
+  <Step title="Create a custom theme">
+    Example: Blue accent theme
+
+    ```css
+    :root {
+      --accent:     #60a5fa;    /* Blue accent */
+      --accent-dim: #60a5fa44;
+      --accent-glow:#60a5fa22;
+      --border-bright: #60a5fa55;
+    }
+    ```
+
+    Example: Purple accent theme
+
+    ```css
+    :root {
+      --accent:     #a78bfa;    /* Purple accent */
+      --accent-dim: #a78bfa44;
+      --accent-glow:#a78bfa22;
+      --border-bright: #a78bfa55;
+    }
+    ```
+  </Step>
+</Steps>
+
+## Java Version Requirements
+
+Configure which Java versions are required for different Minecraft versions.
+
+<Steps>
+  <Step title="Open paths.js">
+    Navigate to `src/main/utils/paths.js`
+  </Step>
+
+  <Step title="Update JAVA_VERSIONS mapping">
+    ```javascript src/main/utils/paths.js
+    const JAVA_VERSIONS = {
+      '1.17': { version: '17', major: 17 },
+      '1.18': { version: '17', major: 17 },
+      '1.19': { version: '17', major: 17 },
+      '1.20': { version: '21', major: 21 },
+      '1.21': { version: '21', major: 21 },
+    };
+    ```
+
+    The launcher uses this mapping to:
+    - Determine required Java version during bootstrap
+    - Download the correct Java distribution
+    - Validate existing Java installations
+  </Step>
+</Steps>
+
+## Application Branding
+
+### Product Name and App ID
+
+Update the application identity in `package.json`:
+
+```json package.json
+{
+  "name": "YourLauncherName",
+  "version": "1.0.0",
+  "description": "Custom Minecraft Launcher for Your Server",
+  "build": {
+    "appId": "com.yourserver.launcher",
+    "productName": "Your Server Launcher"
+  }
+}
+```
+
+### Application Icons
+
+Replace the default icons in `src/assets/`:
+
+- **Windows**: `icon.ico` (256x256 pixels)
+- **Linux**: `icon.png` (512x512 pixels)
+- **macOS**: `icon.icns` (1024x1024 pixels)
+
+<Tip>
+  Use tools like [iConvert Icons](https://iconverticons.com/) to convert between icon formats.
+</Tip>
+
+## Data Directory Location
+
+The launcher stores data in the user's home directory. To change this:
+
+```javascript src/main/utils/paths.js
+const BASE_DIR = path.join(os.homedir(), '.YourLauncherName');
+```
+
+### Directory Structure
+
+The launcher creates these subdirectories:
+
+```javascript src/main/utils/paths.js
+function ensureDirectories() {
+  const dirs = [
+    'java',       // Bundled Java runtime
+    'versions',   // Minecraft client jars
+    'mods',       // Synchronized mods
+    'modpacks',   // Mod packs
+    'config',     // Mod configurations
+    'assets',     // Minecraft assets
+    'cache',      // Cached manifest
+    'libraries',  // Minecraft/Forge libraries
+    'logs'        // Bootstrap logs
+  ];
+  dirs.forEach(d => fs.mkdirSync(path.join(BASE_DIR, d), { recursive: true }));
+}
+```
+
+## Tips and Videos
+
+Add custom tips and video content to the Tips tab:
+
+```javascript src/renderer/data/tips.js
+export const TIPS = [
+  {
+    title: 'Getting Started Guide',
+    thumbnail: 'https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg',
+    url: 'https://youtube.com/watch?v=VIDEO_ID',
+    category: 'Tutorial'
+  },
+  {
+    title: 'Server Rules',
+    thumbnail: '/path/to/thumbnail.jpg',
+    url: 'https://yourserver.com/rules',
+    category: 'Info'
+  },
+  // Add more tips...
+];
+
+export const TIP_CATEGORIES = ['Tutorial', 'Info', 'Building', 'Mods'];
+```
+
+## Window Configuration
+
+Customize window dimensions and behavior:
+
+```javascript src/main/windows/mainWindow.js
+function createMainWindow() {
+  state.mainWindow = new BrowserWindow({
+    width: 960,        // Window width
+    height: 640,       // Window height
+    frame: false,      // Frameless window
+    resizable: false,  // Prevent resizing
+    // ... other options
+  });
+}
+```
+
+```javascript src/main/windows/bootstrapWindow.js
+function createBootstrapWindow() {
+  state.bootstrapWindow = new BrowserWindow({
+    width: 520,        // Bootstrap window width
+    height: 400,       // Bootstrap window height
+    frame: false,
+    resizable: false,
+    // ... other options
+  });
+}
+```
+
+## Default RAM Allocation
+
+Set the default RAM amount in the configuration:
+
+```javascript src/main/services/configService.js
+const DEFAULT_CONFIG = {
+  username: '',
+  ram: '4096',           // Default: 4GB
+  gameDirectory: BASE_DIR,
+  javaPath: '',
+  selectedProfile: CONFIG.DEFAULT_PROFILE,
+};
+```
+
+## Testing Customizations
+
+After making customizations:
+
+<Steps>
+  <Step title="Clear cached data">
+    Remove the data directory to test fresh installations:
+
+    <CodeGroup>
+    ```bash Windows
+    rmdir /s %USERPROFILE%\.UmuCraft
+    ```
+
+    ```bash Linux/macOS
+    rm -rf ~/.UmuCraft
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Test in development mode">
+    ```bash
+    npm run dev
+    ```
+  </Step>
+
+  <Step title="Build and test installer">
+    ```bash
+    npm run build
+    ```
+    
+    Install the generated package and verify all customizations appear correctly.
+  </Step>
+</Steps>
+
+## Checklist for Custom Deployments
+
+Before distributing your customized launcher:
+
+- [ ] Update manifest URL in `paths.js`
+- [ ] Configure server list in `servers.js`
+- [ ] Set Discord invite in `discord.js`
+- [ ] Customize colors in `variables.css`
+- [ ] Replace application icons in `assets/`
+- [ ] Update product name and app ID in `package.json`
+- [ ] Test all features in development mode
+- [ ] Build and test installer on clean system
+- [ ] Verify manifest downloads correctly
+- [ ] Confirm server pinging works
+- [ ] Test game launch with mod synchronization
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Building" icon="hammer" href="/development/building">
+    Learn how to build the launcher for distribution
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/development/troubleshooting">
+    Solve common issues and errors
+  </Card>
+</CardGroup>

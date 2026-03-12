@@ -1,0 +1,462 @@
+---
+title: 'RuntimeInstaller'
+description: 'Downloads and installs Adoptium Temurin JDK 21 with progress reporting'
+---
+
+## Overview
+
+The `RuntimeInstaller` class handles automatic download and installation of Adoptium Temurin JDK 21 when no compatible Java runtime is found on the system. It supports Windows, Linux, and macOS with platform-specific extraction methods.
+
+**Source:** `src/main/bootstrap/installer.js`
+
+## Constructor
+
+```javascript
+const installer = new RuntimeInstaller(logger, baseDir);
+```
+
+<ParamField path="logger" type="BootstrapLogger" required>
+  Logger instance for installation progress and errors
+</ParamField>
+
+<ParamField path="baseDir" type="string" required>
+  Base directory for UmuCraft data (typically `~/.UmuCraft`)
+</ParamField>
+
+**Source:** `src/main/bootstrap/installer.js:17-25`
+
+**Initialization:**
+
+The constructor automatically creates required directories:
+- `{baseDir}/java` - Target directory for installed JDK
+- `{baseDir}/cache` - Temporary directory for downloaded archives
+
+## Properties
+
+<ResponseField name="logger" type="BootstrapLogger">
+  Logger instance for output
+</ResponseField>
+
+<ResponseField name="baseDir" type="string">
+  Base directory path
+</ResponseField>
+
+<ResponseField name="javaDir" type="string">
+  Installation directory: `{baseDir}/java`
+</ResponseField>
+
+<ResponseField name="cacheDir" type="string">
+  Download cache directory: `{baseDir}/cache`
+</ResponseField>
+
+## Constants
+
+### Download URLs
+
+Platform-specific download URLs for Adoptium Temurin JDK 21.0.2+13:
+
+```javascript
+const DOWNLOAD_URLS = {
+  win32:  'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.2%2B13/OpenJDK21U-jdk_x64_windows_hotspot_21.0.2_13.zip',
+  linux:  'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.2%2B13/OpenJDK21U-jdk_x64_linux_hotspot_21.0.2_13.tar.gz',
+  darwin: 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.2%2B13/OpenJDK21U-jdk_x64_mac_hotspot_21.0.2_13.tar.gz',
+};
+```
+
+**Source:** `src/main/bootstrap/installer.js:11-15`
+
+### Timeouts
+
+```javascript
+const DOWNLOAD_TIMEOUT = 5 * 60 * 1000;  // 5 minutes
+const EXTRACT_TIMEOUT  = 3 * 60 * 1000;  // 3 minutes
+```
+
+**Source:** `src/main/bootstrap/installer.js:8-9`
+
+## Methods
+
+### install()
+
+Downloads, extracts, and validates Adoptium Temurin JDK 21 for the current platform.
+
+```javascript
+const result = await installer.install(onProgress);
+```
+
+<ParamField path="onProgress" type="function">
+  Callback function for download progress updates
+  
+  **Signature:** `(percent, downloaded, total) => void`
+  
+  <ParamField path="percent" type="number">
+    Download progress percentage (0-100)
+  </ParamField>
+  
+  <ParamField path="downloaded" type="number">
+    Bytes downloaded so far
+  </ParamField>
+  
+  <ParamField path="total" type="number">
+    Total file size in bytes
+  </ParamField>
+</ParamField>
+
+**Returns:** `Promise<Object>`
+
+<ResponseField name="valid" type="boolean" required>
+  Whether the installed Java is valid (should always be `true` if no error thrown)
+</ResponseField>
+
+<ResponseField name="version" type="number" required>
+  Major Java version (should be `21`)
+</ResponseField>
+
+<ResponseField name="path" type="string" required>
+  Absolute path to the installed java executable
+</ResponseField>
+
+<ResponseField name="output" type="string" required>
+  First line of `java -version` output from the installed JDK
+</ResponseField>
+
+**Throws:** `Error`
+
+Throws if:
+- Platform not supported
+- Download fails (timeout, network error, HTTP error)
+- Extraction fails
+- Java binary not found after extraction
+- Validation fails (version < 17 or execution error)
+
+**Source:** `src/main/bootstrap/installer.js:100-166`
+
+**Example:**
+
+```javascript
+const RuntimeInstaller = require('./bootstrap/installer');
+const BootstrapLogger = require('./bootstrap/logger');
+
+const logger = new BootstrapLogger('/home/user/.UmuCraft');
+const installer = new RuntimeInstaller(logger, '/home/user/.UmuCraft');
+
+try {
+  const result = await installer.install((percent, downloaded, total) => {
+    const mb = (n) => (n / 1024 / 1024).toFixed(1);
+    console.log(`Download: ${percent}% (${mb(downloaded)}/${mb(total)} MB)`);
+  });
+  
+  console.log(`Installed Java ${result.version}`);
+  console.log(`Path: ${result.path}`);
+  console.log(`Output: ${result.output}`);
+} catch (err) {
+  console.error(`Installation failed: ${err.message}`);
+}
+```
+
+## Installation Process
+
+The `install()` method follows this sequence:
+
+### 1. Platform Detection
+
+```javascript
+const platform = process.platform;
+const url = DOWNLOAD_URLS[platform];
+if (!url) throw new Error(`No download URL for platform: ${platform}`);
+```
+
+**Supported platforms:**
+- `win32` - Windows (x64)
+- `linux` - Linux (x64)
+- `darwin` - macOS (x64)
+
+**Source:** `src/main/bootstrap/installer.js:105-107`
+
+### 2. Archive Path Setup
+
+```javascript
+const ext = platform === 'win32' ? 'zip' : 'tar.gz';
+const archivePath = path.join(this.cacheDir, `jdk21.${ext}`);
+const targetDir = path.join(this.javaDir, 'jdk21');
+```
+
+**Paths:**
+- **Archive:** `~/.UmuCraft/cache/jdk21.zip` (Windows) or `jdk21.tar.gz` (Linux/macOS)
+- **Target:** `~/.UmuCraft/java/jdk21/`
+
+**Source:** `src/main/bootstrap/installer.js:109-111`
+
+### 3. Clean Previous Installation
+
+```javascript
+if (fs.existsSync(targetDir)) {
+  this.logger.log(`Removing previous install at: ${targetDir}`);
+  fs.rmSync(targetDir, { recursive: true, force: true });
+}
+fs.mkdirSync(targetDir, { recursive: true });
+```
+
+Ensures a clean installation by removing any failed previous attempts.
+
+**Source:** `src/main/bootstrap/installer.js:114-118`
+
+### 4. Download
+
+```javascript
+this.logger.log(`Downloading Adoptium JDK 21 for ${platform}...`);
+this.logger.log(`URL: ${url}`);
+
+await this._downloadFile(url, archivePath, onProgress);
+```
+
+Downloads the JDK archive with automatic redirect following and progress reporting.
+
+**Source:** `src/main/bootstrap/installer.js:121-124`
+
+### 5. Extract
+
+#### Windows
+
+```powershell
+Expand-Archive -Force -LiteralPath '{archivePath}' -DestinationPath '{targetDir}'
+```
+
+Uses PowerShell's `Expand-Archive` cmdlet.
+
+**Source:** `src/main/bootstrap/installer.js:130-134`
+
+#### Linux/macOS
+
+```bash
+tar -xzf "{archivePath}" -C "{targetDir}" --strip-components=1
+```
+
+Uses `tar` with:
+- `-xzf` - Extract gzipped tarball
+- `--strip-components=1` - Remove top-level directory from archive
+- Sets executable permission on `bin/java` (`chmod 755`)
+
+**Source:** `src/main/bootstrap/installer.js:135-142`
+
+**Timeout:** 3 minutes (`EXTRACT_TIMEOUT`)
+
+**Source:** `src/main/bootstrap/installer.js:9,133,138`
+
+### 6. Cleanup Archive
+
+```javascript
+try { fs.unlinkSync(archivePath); } catch {}
+```
+
+Deletes the downloaded archive to save disk space. Silently ignores errors.
+
+**Source:** `src/main/bootstrap/installer.js:148`
+
+### 7. Find and Validate
+
+```javascript
+const RuntimeDetector = require('./detector');
+const detector = new RuntimeDetector(this.logger, this.baseDir);
+const candidates = detector.findJavaExecutables(targetDir);
+
+if (candidates.length === 0) {
+  throw new Error('Java binary not found after extraction');
+}
+
+const result = detector.validateExecutable(candidates[0]);
+if (!result.valid) {
+  throw new Error(`Installed Java validation failed: ${result.error}`);
+}
+```
+
+Searches for the java executable and validates it can run and reports version 17+.
+
+**Source:** `src/main/bootstrap/installer.js:151-162`
+
+## Download Implementation
+
+The `_downloadFile()` method implements robust HTTP(S) downloading:
+
+```javascript
+_downloadFile(url, destPath, onProgress)
+```
+
+<ParamField path="url" type="string" required>
+  Download URL (http or https)
+</ParamField>
+
+<ParamField path="destPath" type="string" required>
+  Absolute path where file should be saved
+</ParamField>
+
+<ParamField path="onProgress" type="function">
+  Optional progress callback: `(percent, downloaded, total) => void`
+</ParamField>
+
+**Returns:** `Promise<void>`
+
+**Source:** `src/main/bootstrap/installer.js:27-98`
+
+**Features:**
+
+### Automatic Redirects
+
+```javascript
+if (res.statusCode === 301 || res.statusCode === 302) {
+  this.logger.log(`Redirect -> ${res.headers.location}`);
+  doRequest(res.headers.location, redirects + 1);
+  return;
+}
+```
+
+Follows HTTP 301/302 redirects automatically (max 5 redirects).
+
+**Source:** `src/main/bootstrap/installer.js:53-57`
+
+### Timeout Protection
+
+```javascript
+const timer = setTimeout(() => {
+  aborted = true;
+  if (file) file.destroy();
+  reject(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT / 1000}s`));
+}, DOWNLOAD_TIMEOUT);
+```
+
+Aborts download after 5 minutes to prevent hanging.
+
+**Source:** `src/main/bootstrap/installer.js:37-41,8`
+
+### Progress Reporting
+
+```javascript
+total = parseInt(res.headers['content-length'] || '0', 10);
+this.logger.log(`File size: ${total > 0 ? (total / 1024 / 1024).toFixed(1) + ' MB' : 'unknown'}`);
+
+res.on('data', (chunk) => {
+  downloaded += chunk.length;
+  if (total > 0 && onProgress) {
+    onProgress(Math.round((downloaded / total) * 100), downloaded, total);
+  }
+});
+```
+
+Reports progress percentage based on `Content-Length` header.
+
+**Source:** `src/main/bootstrap/installer.js:64-74`
+
+### Stream to File
+
+```javascript
+file = fs.createWriteStream(destPath);
+res.pipe(file);
+
+file.on('finish', () => {
+  cleanup();
+  file.close(() => resolve());
+});
+```
+
+Streams directly to disk without loading entire file into memory.
+
+**Source:** `src/main/bootstrap/installer.js:67,77-82`
+
+## Expected File Sizes
+
+Adoptium Temurin JDK 21.0.2+13 compressed sizes:
+
+- **Windows (ZIP):** ~193 MB
+- **Linux (tar.gz):** ~190 MB
+- **macOS (tar.gz):** ~190 MB
+
+Extracted size: ~300-320 MB per platform
+
+## Error Scenarios
+
+### Unsupported Platform
+
+```javascript
+if (!url) throw new Error(`No download URL for platform: ${platform}`);
+```
+
+Thrown if `process.platform` is not `win32`, `linux`, or `darwin`.
+
+**Source:** `src/main/bootstrap/installer.js:107`
+
+### Download Failures
+
+- **Timeout:** `Download timed out after 300s`
+- **Network:** Connection errors, DNS failures
+- **HTTP errors:** `HTTP 404 for {url}`, `HTTP 500 for {url}`, etc.
+- **Too many redirects:** After 5 redirects
+
+**Source:** `src/main/bootstrap/installer.js:40,47,61`
+
+### Extraction Failures
+
+```javascript
+catch (err) {
+  throw new Error(`Extraction failed: ${err.message}`);
+}
+```
+
+Possible causes:
+- Corrupted download
+- Insufficient disk space
+- Missing `tar` binary (Linux/macOS)
+- PowerShell execution policy (Windows)
+
+**Source:** `src/main/bootstrap/installer.js:143-145`
+
+### Validation Failures
+
+```javascript
+if (candidates.length === 0) {
+  throw new Error('Java binary not found after extraction');
+}
+
+const result = detector.validateExecutable(candidates[0]);
+if (!result.valid) {
+  throw new Error(`Installed Java validation failed: ${result.error}`);
+}
+```
+
+Thrown if:
+- Java binary not found in expected location
+- Executable doesn't run
+- Version is incorrect (should never happen with official Adoptium builds)
+
+**Source:** `src/main/bootstrap/installer.js:155-162`
+
+## Integration with BootstrapController
+
+The controller uses the installer when no compatible runtime is found:
+
+```javascript
+this.setState('runtime_not_found');
+this.logger.log('No compatible Java runtime found. Will download Adoptium JDK 21.');
+
+this.setState('downloading_runtime');
+const installResult = await this.installer.install((pct, downloaded, total) => {
+  this.logger.progress({
+    phase: 'downloading',
+    percent: pct,
+    downloaded,
+    total,
+  });
+});
+
+this.setState('validating_runtime');
+if (!installResult.valid) {
+  throw new Error('Installed runtime validation failed');
+}
+```
+
+**Source:** `src/main/bootstrap/controller.js:76-92`
+
+## See Also
+
+- [BootstrapController](/api/bootstrap-controller) - Bootstrap orchestration
+- [RuntimeDetector](/api/runtime-detector) - Java detection and validation
+- [Adoptium Temurin](https://adoptium.net/) - Official Adoptium website

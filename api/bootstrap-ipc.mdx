@@ -1,0 +1,412 @@
+---
+title: 'Bootstrap IPC Handlers'
+description: 'Initial setup process: Java detection, installation, and first-time configuration'
+---
+
+## Overview
+
+The Bootstrap IPC module (`src/main/ipc/bootstrapIpc.js`) handles the initial setup process that runs when the launcher first starts. This includes detecting or installing Java, creating default profiles, and preparing the launcher environment.
+
+<Info>
+  Bootstrap handlers are only used during the initial setup window. Once setup is complete, the main launcher window uses [Launcher IPC handlers](/api/launcher-ipc) instead.
+</Info>
+
+## Handlers
+
+### bootstrap-retry
+
+Retries the bootstrap process after a failure. Re-runs Java detection, installation, and profile setup.
+
+<ParamField path="Returns" type="void">
+  No return value. Sends progress events to the bootstrap window.
+</ParamField>
+
+#### Example
+
+```javascript
+// Bootstrap window renderer
+class BootstrapScreen {
+  async handleRetry() {
+    const retryBtn = document.getElementById('retry-btn');
+    retryBtn.disabled = true;
+    retryBtn.textContent = 'Retrying...';
+    
+    // Retry bootstrap process
+    await window.launcher.bootstrapRetry();
+    
+    // Handler will close bootstrap window and open main window on success
+  }
+  
+  setupErrorHandling() {
+    // Listen for bootstrap errors
+    window.launcher.on('bootstrap-error', (error) => {
+      document.getElementById('error-message').textContent = error;
+      document.getElementById('retry-btn').disabled = false;
+    });
+  }
+}
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/bootstrapIpc.js:11-31
+ipcMain.handle('bootstrap-retry', async () => {
+  if (!state.bootstrapCtrl || !state.bootstrapWindow || state.bootstrapWindow.isDestroyed()) return;
+
+  state.bootstrapCtrl = new BootstrapController(BASE_DIR);
+  state.bootstrapCtrl.setSender(state.bootstrapWindow.webContents);
+
+  const result = await state.bootstrapCtrl.run();
+  if (!result.ok) return;
+
+  state.resolvedJavaPath = result.javaPath;
+
+  state.bootstrapCtrl.logger.state('preparing_profile');
+  try { await ensureDefaultProfile(); } catch {}
+
+  await new Promise(r => setTimeout(r, 800));
+  createMainWindow();
+  if (state.bootstrapWindow && !state.bootstrapWindow.isDestroyed()) {
+    state.bootstrapWindow.close();
+    state.bootstrapWindow = null;
+  }
+});
+```
+
+---
+
+### bootstrap-open-logs
+
+Opens the bootstrap log file in the system's default text editor or viewer.
+
+<ParamField path="Returns" type="void">
+  No return value
+</ParamField>
+
+#### Example
+
+```javascript
+// Open logs for troubleshooting
+document.getElementById('view-logs-btn').addEventListener('click', async () => {
+  await window.launcher.bootstrapOpenLogs();
+});
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/bootstrapIpc.js:33-38
+ipcMain.handle('bootstrap-open-logs', () => {
+  const logPath = state.bootstrapCtrl
+    ? state.bootstrapCtrl.getLogPath()
+    : path.join(BASE_DIR, 'logs', 'bootstrap.log');
+  shell.openPath(logPath);
+});
+```
+
+## Bootstrap Process Flow
+
+1. **Create Bootstrap Window** - Display setup UI
+2. **Run Bootstrap Controller** - Execute setup steps
+   - Detect system Java installations
+   - Download/install Java if needed (Java 8, 17, or 21)
+   - Verify Java functionality
+3. **Create Default Profile** - Set up initial modpack profile
+4. **Transition to Main Window** - Close bootstrap, open main launcher
+
+```javascript
+// Bootstrap flow diagram
+Bootstrap Window
+       ↓
+   Java Check
+       ↓
+  [Java Found?] —No→ Download & Install Java
+       ↓ Yes
+   Verify Java
+       ↓
+ Create Profile
+       ↓
+  Main Window
+```
+
+## Bootstrap Events
+
+During the bootstrap process, the controller sends events to the bootstrap window:
+
+| Event | Description | Payload |
+|-------|-------------|---------|
+| `bootstrap-state` | Current setup state | `string` (state name) |
+| `bootstrap-progress` | Download progress | `{ percent: number, downloaded: number, total: number }` |
+| `bootstrap-log` | Log message | `string` |
+| `bootstrap-error` | Error occurred | `string` (error message) |
+
+## Example: Bootstrap Window UI
+
+```javascript
+class BootstrapWindow {
+  constructor() {
+    this.setupEventListeners();
+  }
+  
+  setupEventListeners() {
+    // State updates
+    window.launcher.on('bootstrap-state', (state) => {
+      this.updateState(state);
+    });
+    
+    // Progress updates
+    window.launcher.on('bootstrap-progress', (progress) => {
+      this.updateProgress(progress);
+    });
+    
+    // Log messages
+    window.launcher.on('bootstrap-log', (message) => {
+      this.addLogMessage(message);
+    });
+    
+    // Error handling
+    window.launcher.on('bootstrap-error', (error) => {
+      this.showError(error);
+    });
+    
+    // Retry button
+    document.getElementById('retry-btn').addEventListener('click', () => {
+      this.retry();
+    });
+    
+    // View logs button
+    document.getElementById('logs-btn').addEventListener('click', () => {
+      window.launcher.bootstrapOpenLogs();
+    });
+  }
+  
+  updateState(state) {
+    const stateMap = {
+      'checking_java': 'Checking for Java...',
+      'downloading_java': 'Downloading Java...',
+      'installing_java': 'Installing Java...',
+      'verifying_java': 'Verifying Java installation...',
+      'preparing_profile': 'Preparing default profile...',
+      'complete': 'Setup complete!'
+    };
+    
+    const message = stateMap[state] || state;
+    document.getElementById('status-text').textContent = message;
+  }
+  
+  updateProgress({ percent, downloaded, total }) {
+    const progressBar = document.getElementById('progress-bar');
+    progressBar.style.width = `${percent}%`;
+    
+    const downloadedMB = (downloaded / 1024 / 1024).toFixed(1);
+    const totalMB = (total / 1024 / 1024).toFixed(1);
+    
+    document.getElementById('progress-text').textContent = 
+      `${downloadedMB} MB / ${totalMB} MB`;
+  }
+  
+  addLogMessage(message) {
+    const logContainer = document.getElementById('log-messages');
+    const logEntry = document.createElement('div');
+    logEntry.className = 'log-entry';
+    logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    logContainer.appendChild(logEntry);
+    logContainer.scrollTop = logContainer.scrollHeight;
+  }
+  
+  showError(error) {
+    document.getElementById('error-container').style.display = 'block';
+    document.getElementById('error-message').textContent = error;
+    document.getElementById('retry-btn').disabled = false;
+    document.getElementById('retry-btn').style.display = 'block';
+  }
+  
+  async retry() {
+    // Hide error, reset UI
+    document.getElementById('error-container').style.display = 'none';
+    document.getElementById('retry-btn').disabled = true;
+    document.getElementById('log-messages').innerHTML = '';
+    
+    // Retry bootstrap
+    await window.launcher.bootstrapRetry();
+  }
+}
+
+// Initialize
+const bootstrap = new BootstrapWindow();
+```
+
+## Bootstrap States
+
+The bootstrap controller goes through these states:
+
+| State | Description |
+|-------|-------------|
+| `checking_java` | Scanning system for Java installations |
+| `downloading_java` | Downloading Java runtime (if not found) |
+| `extracting_java` | Extracting Java archive |
+| `verifying_java` | Testing Java executable |
+| `preparing_profile` | Creating default modpack profile |
+| `complete` | Setup finished successfully |
+
+## Java Version Detection
+
+The bootstrap process detects and installs the appropriate Java version:
+
+- **Java 8** - For Minecraft 1.12.2 and older
+- **Java 17** - For Minecraft 1.18.x to 1.20.4
+- **Java 21** - For Minecraft 1.20.5+
+
+```javascript
+// The launcher automatically determines required Java version
+// based on Minecraft version in manifest
+```
+
+## Log File Location
+
+Bootstrap logs are stored at:
+
+```
+{BASE_DIR}/logs/bootstrap.log
+```
+
+Where `BASE_DIR` is:
+- **Windows**: `%APPDATA%/umucraft-launcher`
+- **macOS**: `~/Library/Application Support/umucraft-launcher`
+- **Linux**: `~/.config/umucraft-launcher`
+
+## Error Scenarios
+
+### Network Errors
+
+```javascript
+// If Java download fails
+window.launcher.on('bootstrap-error', (error) => {
+  if (error.includes('ECONNREFUSED') || error.includes('ETIMEDOUT')) {
+    // Show network error message
+    showNetworkError();
+  }
+});
+```
+
+### Disk Space Errors
+
+```javascript
+// If insufficient disk space
+window.launcher.on('bootstrap-error', (error) => {
+  if (error.includes('ENOSPC')) {
+    // Show disk space error
+    showDiskSpaceError();
+  }
+});
+```
+
+### Permission Errors
+
+```javascript
+// If lacking write permissions
+window.launcher.on('bootstrap-error', (error) => {
+  if (error.includes('EACCES') || error.includes('EPERM')) {
+    // Show permission error
+    showPermissionError();
+  }
+});
+```
+
+## Retry Strategy
+
+Implement exponential backoff for automatic retries:
+
+```javascript
+class BootstrapRetryManager {
+  constructor() {
+    this.attempts = 0;
+    this.maxAttempts = 3;
+  }
+  
+  async retryWithBackoff() {
+    while (this.attempts < this.maxAttempts) {
+      try {
+        await window.launcher.bootstrapRetry();
+        return; // Success
+      } catch (error) {
+        this.attempts++;
+        
+        if (this.attempts >= this.maxAttempts) {
+          throw new Error('Bootstrap failed after 3 attempts');
+        }
+        
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = Math.pow(2, this.attempts) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+}
+```
+
+## Best Practices
+
+### Show Progress
+
+Always display detailed progress during bootstrap:
+
+```javascript
+// Good: Detailed progress
+window.launcher.on('bootstrap-state', (state) => {
+  updateProgressBar(state);
+  showCurrentStep(state);
+});
+
+// Bad: No feedback
+window.launcher.bootstrapRetry(); // User sees nothing
+```
+
+### Enable Logs Access
+
+Always provide a way to view logs:
+
+```html
+<button id="view-logs-btn">
+  View Logs
+</button>
+```
+
+### Handle Offline Mode
+
+If Java is already installed, bootstrap should work offline:
+
+```javascript
+if (javaFound) {
+  // Skip download, use existing Java
+  proceedWithExistingJava();
+} else {
+  // Attempt download
+  downloadJava();
+}
+```
+
+## Related Services
+
+The bootstrap process uses:
+
+- `BootstrapController` - Orchestrates setup process
+- `profileService.ensureDefaultProfile()` - Creates initial profile
+- Main process `state` - Stores resolved Java path
+
+## Transition to Main Launcher
+
+After successful bootstrap:
+
+1. `state.resolvedJavaPath` is set
+2. Default profile is created
+3. Main window is created
+4. Bootstrap window is closed
+5. Main launcher uses [startup-check](/api/launcher-ipc#startup-check) to verify Java
+
+## Related Handlers
+
+- [startup-check](/api/launcher-ipc#startup-check) - Verify Java after bootstrap
+- [open-folder](/api/util-ipc#open-folder) - Open logs directory
+- [get-system-info](/api/util-ipc#get-system-info) - System information for Java installation

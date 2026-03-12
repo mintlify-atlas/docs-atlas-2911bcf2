@@ -1,0 +1,322 @@
+---
+title: Building from Source
+description: Complete guide to building Umucraft Launcher from source code
+---
+
+## Prerequisites
+
+Before building the launcher, ensure you have:
+
+- **Node.js** 16.x or higher
+- **npm** 7.x or higher
+- Git (for cloning the repository)
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Umucraft Launcher source code to your local machine:
+
+    ```bash
+    git clone https://github.com/your-org/umucraft-launcher.git
+    cd umucraft-launcher
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all required npm packages:
+
+    ```bash
+    npm install
+    ```
+
+    ### Core Dependencies
+
+    The launcher uses the following production dependencies:
+
+    | Package | Version | Purpose |
+    |---------|---------|----------|
+    | `axios` | ^1.6.0 | HTTP client for manifest and file downloads |
+    | `extract-zip` | ^2.0.1 | Extract mod packs and Java distributions |
+    | `fs-extra` | ^11.2.0 | Enhanced file system operations |
+
+    ### Development Dependencies
+
+    | Package | Version | Purpose |
+    |---------|---------|----------|
+    | `electron` | ^28.0.0 | Desktop application framework |
+    | `electron-builder` | ^24.0.0 | Package and build installer |
+  </Step>
+
+  <Step title="Run in development mode">
+    Start the launcher with developer tools enabled:
+
+    <CodeGroup>
+    ```bash Dev Mode
+    npm run dev
+    ```
+
+    ```bash Standard Mode
+    npm start
+    ```
+    </CodeGroup>
+
+    **Dev mode features:**
+    - Opens Electron DevTools automatically
+    - Hot reload not included (restart required for changes)
+    - Full console logging enabled
+  </Step>
+</Steps>
+
+## Build Scripts
+
+The launcher includes npm scripts for different platforms:
+
+### Windows
+
+Build a Windows installer (.exe) using NSIS:
+
+```bash
+npm run build
+```
+
+**Output:** `dist/Umucraft Launcher Setup.exe`
+
+**Configuration:**
+- Target: NSIS installer
+- Icon: `src/assets/icon.ico`
+- Two-click installer (user can choose installation directory)
+- App ID: `com.umucraft.launcher`
+
+### Linux
+
+Build an AppImage for universal Linux distribution:
+
+```bash
+npm run build:linux
+```
+
+**Output:** `dist/Umucraft Launcher-1.0.0.AppImage`
+
+**Configuration:**
+- Target: AppImage
+- Icon: `src/assets/icon.png`
+- Self-contained (includes all dependencies)
+
+### macOS
+
+Build a DMG installer for macOS:
+
+```bash
+npm run build:mac
+```
+
+**Output:** `dist/Umucraft Launcher-1.0.0.dmg`
+
+**Configuration:**
+- Target: DMG disk image
+- Icon: `src/assets/icon.icns`
+- Drag-to-Applications installer
+
+<Note>
+  **Cross-platform builds:** You can only build for your current platform unless you configure electron-builder with proper signing certificates and build environments.
+</Note>
+
+## Electron Builder Configuration
+
+The launcher's build configuration is defined in `package.json`:
+
+```json
+{
+  "build": {
+    "appId": "com.umucraft.launcher",
+    "productName": "Umucraft Launcher",
+    "icon": "src/assets/icon.ico",
+    "win": {
+      "target": ["nsis"],
+      "icon": "src/assets/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "src/assets/icon.png"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "src/assets/icon.icns"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": []
+  }
+}
+```
+
+### Key Configuration Options
+
+- **appId**: Unique identifier for the application
+- **productName**: Display name shown to users
+- **files**: Source files included in the build
+- **extraResources**: Additional files bundled (empty by default)
+- **nsis.oneClick**: Set to `false` to allow custom installation directory
+
+## Build Output
+
+After running a build command, the `dist/` directory will contain:
+
+```
+dist/
+├── win-unpacked/           # Unpacked Windows app (for testing)
+├── linux-unpacked/         # Unpacked Linux app (for testing)
+├── Umucraft Launcher Setup.exe  # Windows installer
+├── Umucraft Launcher-1.0.0.AppImage  # Linux AppImage
+└── builder-effective-config.yaml  # Build configuration used
+```
+
+## Testing Builds
+
+Before distributing installers:
+
+<Steps>
+  <Step title="Test the unpacked build">
+    Navigate to `dist/win-unpacked` (or `linux-unpacked`) and run the executable directly:
+
+    <CodeGroup>
+    ```bash Windows
+    cd dist/win-unpacked
+    "Umucraft Launcher.exe"
+    ```
+
+    ```bash Linux
+    cd dist/linux-unpacked
+    ./umucraft-launcher
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Test the installer">
+    Install the application using the generated installer and verify:
+    - Application launches correctly
+    - Java bootstrap works
+    - Manifest downloads successfully
+    - Game launches with proper mod synchronization
+  </Step>
+
+  <Step title="Test on a clean system">
+    Install on a system without development tools to ensure all dependencies are properly bundled.
+  </Step>
+</Steps>
+
+## Project Structure
+
+Understanding the codebase structure helps when making modifications:
+
+```
+src/
+├── main/                          # Main process (Node.js/CommonJS)
+│   ├── index.js                   # Application entry point
+│   ├── state.js                   # Shared application state
+│   ├── preload.js                 # IPC bridge for main window
+│   ├── bootstrap-preload.js       # IPC bridge for bootstrap window
+│   ├── bootstrap/                 # Java detection & installation
+│   ├── ipc/                       # IPC handlers by domain
+│   ├── services/                  # Core business logic
+│   ├── utils/                     # Shared utilities
+│   └── windows/                   # Window creation
+│
+├── renderer/                      # Renderer process (ES Modules)
+│   ├── index.html                 # Main application UI
+│   ├── bootstrap.html             # Bootstrap window UI
+│   ├── app/init.js                # UI initialization
+│   ├── pages/                     # Page-specific logic
+│   ├── components/                # Reusable UI components
+│   ├── services/                  # IPC communication
+│   ├── store/                     # Reactive state management
+│   ├── data/                      # Static data (servers, tips, Discord)
+│   └── styles/                    # CSS modules
+│
+└── assets/                        # Application icons
+    ├── icon.png
+    ├── icon.ico
+    └── icon.icns
+```
+
+## Development Workflow
+
+<Steps>
+  <Step title="Make your changes">
+    Edit source files in `src/main/` or `src/renderer/`
+  </Step>
+
+  <Step title="Test locally">
+    ```bash
+    npm run dev
+    ```
+  </Step>
+
+  <Step title="Build for distribution">
+    <CodeGroup>
+    ```bash Windows
+    npm run build
+    ```
+
+    ```bash Linux
+    npm run build:linux
+    ```
+
+    ```bash macOS
+    npm run build:mac
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Test the installer">
+    Install and test the packaged application
+  </Step>
+</Steps>
+
+## Common Build Issues
+
+### Missing Dependencies
+
+**Problem:** Build fails with "Cannot find module"
+
+**Solution:**
+```bash
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### Icon Errors
+
+**Problem:** Build fails with icon conversion errors
+
+**Solution:** Ensure all icon files exist:
+- Windows: `src/assets/icon.ico` (256x256)
+- Linux: `src/assets/icon.png` (512x512)
+- macOS: `src/assets/icon.icns` (1024x1024)
+
+### Electron Version Mismatch
+
+**Problem:** Native modules fail to load
+
+**Solution:**
+```bash
+npm rebuild
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Customization" icon="palette" href="/development/customization">
+    Learn how to customize colors, servers, and configuration
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/development/troubleshooting">
+    Solve common development and runtime issues
+  </Card>
+</CardGroup>

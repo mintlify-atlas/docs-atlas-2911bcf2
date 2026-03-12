@@ -1,0 +1,291 @@
+---
+title: Updating Mods
+description: How to push mod updates to your players automatically
+---
+
+One of Umucraft Launcher's core features is automatic mod synchronization. When you update your modpack, players will automatically download the changes the next time they open the launcher.
+
+## Update Workflow
+
+Here's how the mod update system works:
+
+1. You create a new version of your modpack (add/remove/update mods)
+2. You generate a new manifest.json with an incremented version number
+3. You upload the manifest.json to your hosting service (GitHub, Dropbox, etc.)
+4. Players open the launcher
+5. The launcher detects the version change and downloads the new mods.zip
+6. The launcher verifies the MD5 hash and extracts mods to the mods folder
+7. Players launch Minecraft with the updated mods
+
+<Note>
+Mod updates are **automatic and seamless**. Players don't need to manually download anything.
+</Note>
+
+## Updating Your Modpack
+
+<Steps>
+  <Step title="Update your mod files">
+    Make changes to your modpack:
+    
+    - **Adding mods:** Download new `.jar` files and add them to your mods folder
+    - **Updating mods:** Replace old `.jar` files with newer versions
+    - **Removing mods:** Delete the `.jar` files you no longer want
+    
+    <Warning>
+    Always test mod changes on your server before pushing to players. Incompatible mods can cause crashes.
+    </Warning>
+  </Step>
+
+  <Step title="Create a new mods.zip">
+    Compress all mod `.jar` files into a fresh `mods.zip`:
+    
+    ```bash
+    # On Linux/Mac
+    zip -r mods.zip *.jar
+    
+    # On Windows (PowerShell)
+    Compress-Archive -Path *.jar -DestinationPath mods.zip
+    ```
+  </Step>
+
+  <Step title="Upload the new mods.zip">
+    Upload to your hosting service. You have two options:
+    
+    **Option A: Same URL (Recommended for Dropbox)**
+    - Upload and replace the existing mods.zip
+    - Keep the same share link
+    - The MD5 hash will change, triggering the update
+    
+    **Option B: New URL**
+    - Upload with a versioned name (e.g., `mods-v1.1.0.zip`)
+    - Create a new share link
+    - Update the manifest with the new URL
+    
+    <CodeGroup>
+      ```text Dropbox (Same URL)
+      1. Go to your Dropbox folder
+      2. Delete the old mods.zip
+      3. Upload the new mods.zip with the same filename
+      4. Use the existing share link (no changes needed)
+      ```
+      
+      ```text GitHub Releases
+      1. Create a new release (e.g., v1.1.0)
+      2. Upload the new mods.zip as an asset
+      3. Get the new download URL
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Generate updated manifest.json">
+    Run the manifest generation script with an **incremented version number**:
+    
+    ```bash
+    node scripts/generate-manifest.js \
+      ./mods.zip \
+      "https://www.dropbox.com/scl/fi/XXX/mods.zip?rlkey=YYY&dl=1" \
+      ./manifest.json \
+      "Default" \
+      "1.1.0"
+    ```
+    
+    **Important:** The version number (e.g., `1.1.0`) must be **different** from the previous version for the launcher to detect the update.
+    
+    The script will:
+    - Calculate the new MD5 hash of mods.zip
+    - Update the `modsVersion` field
+    - Update the `modsZipMd5` field
+    - Preserve your existing manifest structure (news, tags, etc.)
+  </Step>
+
+  <Step title="Update news section (optional)">
+    Edit the generated `manifest.json` to add a news item announcing the update:
+    
+    ```json
+    {
+      "news": [
+        {
+          "title": "Mod Update - v1.1.0",
+          "date": "2024-03-15",
+          "tag": "update",
+          "pinned": true,
+          "body": "Added Create 0.5.1, Farmer's Delight, and updated JEI to 15.3.0. Restart your launcher to download!"
+        },
+        // ... existing news
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Upload the updated manifest.json">
+    Push the new manifest to your hosting service:
+    
+    <CodeGroup>
+      ```bash GitHub
+      git add manifest.json
+      git commit -m "Update modpack to v1.1.0"
+      git push origin main
+      ```
+      
+      ```text Dropbox
+      1. Delete the old manifest.json from Dropbox
+      2. Upload the new manifest.json
+      3. Keep the same share link
+      ```
+    </CodeGroup>
+    
+    <Note>
+    Changes take effect immediately. Players will receive the update the next time they open the launcher.
+    </Note>
+  </Step>
+</Steps>
+
+## Version Number Best Practices
+
+Follow semantic versioning for your modpack versions:
+
+- **Major version** (1.0.0 → 2.0.0): Complete modpack overhaul, Minecraft version change
+- **Minor version** (1.0.0 → 1.1.0): New mods added, significant mod updates
+- **Patch version** (1.0.0 → 1.0.1): Bug fixes, small mod updates, hotfixes
+
+Examples:
+```
+1.0.0 → 1.0.1  (Updated JEI to fix a bug)
+1.0.1 → 1.1.0  (Added 5 new mods)
+1.1.0 → 2.0.0  (Upgraded from Minecraft 1.20.1 to 1.21)
+```
+
+## MD5 Hash Verification
+
+The launcher uses MD5 hashes to verify mod integrity:
+
+1. When generating the manifest, the script calculates the MD5 hash of your mods.zip
+2. This hash is stored in the `modsZipMd5` field
+3. When players download the zip, the launcher recalculates the MD5
+4. If the hashes match, the extraction proceeds
+5. If they don't match, the download is rejected and retried
+
+This ensures:
+- ✅ Downloads aren't corrupted
+- ✅ Players have exactly the same mods as your server
+- ✅ No partial or failed downloads are used
+
+## Testing Updates
+
+Before pushing updates to all players:
+
+<Steps>
+  <Step title="Test locally">
+    1. Delete your local `~/.UmuCraft/mods/` folder
+    2. Delete the cached manifest: `~/.UmuCraft/cache/manifest.json`
+    3. Open your development launcher
+    4. Verify it downloads and extracts the new mods
+  </Step>
+
+  <Step title="Test on your server">
+    1. Launch Minecraft with the new mods
+    2. Connect to your server
+    3. Verify all mods load correctly
+    4. Check for any crashes or errors
+  </Step>
+
+  <Step title="Test with a friend">
+    Have a player test the update before announcing it server-wide.
+  </Step>
+</Steps>
+
+## Handling Multiple Profiles
+
+If you offer multiple profiles (e.g., Tech Pack and Magic Pack), you can update them independently:
+
+```bash
+# Update Tech Pack to v1.1.0
+node scripts/generate-manifest.js \
+  ./tech-mods.zip \
+  "https://example.com/tech-mods.zip" \
+  ./manifest.json \
+  "Tech Pack" \
+  "1.1.0"
+
+# Update Magic Pack to v2.0.0
+node scripts/generate-manifest.js \
+  ./magic-mods.zip \
+  "https://example.com/magic-mods.zip" \
+  ./manifest.json \
+  "Magic Pack" \
+  "2.0.0"
+```
+
+The script will update each profile independently while preserving the others.
+
+## Rollback Process
+
+If you need to roll back to a previous version:
+
+<Steps>
+  <Step title="Restore the old manifest.json">
+    If using Git:
+    ```bash
+    git checkout HEAD~1 manifest.json
+    git push origin main
+    ```
+  </Step>
+
+  <Step title="Or manually edit the manifest">
+    Change the `modsVersion` and `modsZipUrl` back to the previous values.
+  </Step>
+
+  <Step title="Ensure the old mods.zip is still accessible">
+    If you deleted the old zip, re-upload it.
+  </Step>
+</Steps>
+
+<Warning>
+Rollbacks only affect new launcher sessions. Players who already downloaded the update will need to manually delete their mods folder to re-sync.
+</Warning>
+
+## Update Frequency
+
+Consider these factors when planning updates:
+
+- **Too frequent:** Players may get annoyed by constant downloads
+- **Too rare:** Players miss out on bug fixes and new content
+
+**Recommended schedule:**
+- **Weekly:** For active servers during development
+- **Bi-weekly:** For stable servers
+- **As-needed:** For hotfixes and critical updates
+
+Always announce major updates on Discord or your server's communication channels.
+
+## Troubleshooting
+
+### Players not receiving updates
+
+1. Check that `modsVersion` was incremented
+2. Verify the manifest.json URL is accessible
+3. Confirm the mods.zip download URL works
+4. Check if Dropbox changed the share link format
+
+### Download failures
+
+1. Verify the MD5 hash in the manifest matches the actual file
+2. Ensure the mods.zip URL ends with `?dl=1` (Dropbox)
+3. Check file size limits on your hosting service
+
+### Mods not loading in Minecraft
+
+1. Verify Forge version compatibility
+2. Check for mod conflicts in the server logs
+3. Ensure all server mods are included in the zip
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Manifest Configuration" icon="file-code" href="/admins/manifest-configuration">
+    Learn more about manifest.json structure
+  </Card>
+  <Card title="Server Configuration" icon="server" href="/admins/server-configuration">
+    Configure server list and Discord integration
+  </Card>
+</CardGroup>

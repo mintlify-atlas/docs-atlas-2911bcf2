@@ -1,0 +1,531 @@
+---
+title: "Forge Installer"
+description: "Automated Minecraft Forge mod loader installation service"
+icon: "hammer"
+---
+
+## Overview
+
+The `forgeInstaller.js` service automates the installation of Minecraft Forge mod loader. It handles vanilla Minecraft installation, Forge installer downloading, and running the Forge installer process.
+
+Source: `src/main/services/forgeInstaller.js`
+
+## Main Functions
+
+### installForge
+
+Installs Minecraft Forge for a specific Minecraft version.
+
+<ParamField path="javaPath" type="string" required>
+  Absolute path to the Java executable (Java 8+ required for most Forge versions)
+</ParamField>
+
+<ParamField path="minecraftDir" type="string" required>
+  Path to the Minecraft installation directory (`.minecraft` folder)
+</ParamField>
+
+<ParamField path="mcVersion" type="string" required>
+  Minecraft version (e.g., "1.20.1", "1.16.5")
+</ParamField>
+
+<ParamField path="forgeVersion" type="string" required>
+  Forge version number (e.g., "47.2.0", "36.2.39")
+</ParamField>
+
+<ResponseField name="returns" type="Promise<void>">
+  Resolves when Forge installation is complete
+</ResponseField>
+
+#### Installation Process
+
+The function performs these operations in sequence (src/main/services/forgeInstaller.js:65-114):
+
+1. **Installation Check**: Skips if Forge is already installed
+2. **Vanilla Installation**: Ensures base Minecraft version exists (Forge requires it)
+3. **Profile Creation**: Creates `launcher_profiles.json` if missing (required by Forge installer)
+4. **Installer Download**: Downloads Forge installer JAR from Maven repository
+5. **Installation**: Runs installer with `--installClient` flag
+6. **Verification**: Checks that Forge version JSON was created
+7. **Cleanup**: Removes installer JAR after successful installation
+
+```javascript
+const { installForge } = require('./services/forgeInstaller');
+
+try {
+  await installForge(
+    '/path/to/java',
+    '/home/user/.minecraft',
+    '1.20.1',
+    '47.2.0'
+  );
+  console.log('Forge installed successfully!');
+} catch (error) {
+  console.error('Installation failed:', error.message);
+}
+```
+
+<Note>
+If Forge is already installed, the function returns immediately without re-downloading (see src/main/services/forgeInstaller.js:68-71).
+</Note>
+
+#### Error Conditions
+
+- Throws if Java executable is invalid or version is too old
+- Throws if Minecraft version doesn't exist in Mojang's manifest
+- Throws if Forge installer download fails (404 = invalid Forge version)
+- Throws if installer process exits with non-zero code
+- Throws if Forge version JSON is not created after installation
+
+---
+
+### isForgeInstalled
+
+Checks if a specific Forge version is already installed.
+
+<ParamField path="minecraftDir" type="string" required>
+  Path to the Minecraft installation directory
+</ParamField>
+
+<ParamField path="mcVersion" type="string" required>
+  Minecraft version (e.g., "1.20.1")
+</ParamField>
+
+<ParamField path="forgeVersion" type="string" required>
+  Forge version number (e.g., "47.2.0")
+</ParamField>
+
+<ResponseField name="returns" type="boolean">
+  `true` if Forge is installed, `false` otherwise
+</ResponseField>
+
+Implementation (src/main/services/forgeInstaller.js:59-63):
+
+```javascript
+function isForgeInstalled(minecraftDir, mcVersion, forgeVersion) {
+  const forgeId = getForgeVersionId(mcVersion, forgeVersion);
+  const forgeJsonPath = path.join(minecraftDir, 'versions', forgeId, `${forgeId}.json`);
+  return fs.existsSync(forgeJsonPath);
+}
+```
+
+**Usage example**:
+
+```javascript
+const { isForgeInstalled } = require('./services/forgeInstaller');
+
+if (isForgeInstalled('/home/user/.minecraft', '1.20.1', '47.2.0')) {
+  console.log('Forge is already installed');
+} else {
+  console.log('Forge needs to be installed');
+}
+```
+
+---
+
+## Helper Functions
+
+### getForgeVersionId
+
+Constructs the Forge version identifier used in the Minecraft versions directory.
+
+<ParamField path="mcVersion" type="string" required>
+  Minecraft version
+</ParamField>
+
+<ParamField path="forgeVersion" type="string" required>
+  Forge version number
+</ParamField>
+
+<ResponseField name="returns" type="string">
+  Forge version ID in format `{mcVersion}-forge-{forgeVersion}`
+</ResponseField>
+
+Implementation (src/main/services/forgeInstaller.js:14-16):
+
+```javascript
+function getForgeVersionId(mcVersion, forgeVersion) {
+  return `${mcVersion}-forge-${forgeVersion}`;
+}
+
+// Example:
+const forgeId = getForgeVersionId('1.20.1', '47.2.0');
+// Returns: "1.20.1-forge-47.2.0"
+```
+
+---
+
+### getForgeInstallerUrl
+
+Constructs the Maven download URL for the Forge installer JAR.
+
+<ParamField path="mcVersion" type="string" required>
+  Minecraft version
+</ParamField>
+
+<ParamField path="forgeVersion" type="string" required>
+  Forge version number
+</ParamField>
+
+<ResponseField name="returns" type="string">
+  Direct download URL for the Forge installer
+</ResponseField>
+
+Implementation (src/main/services/forgeInstaller.js:10-12):
+
+```javascript
+function getForgeInstallerUrl(mcVersion, forgeVersion) {
+  return `https://maven.minecraftforge.net/net/minecraftforge/forge/${mcVersion}-${forgeVersion}/forge-${mcVersion}-${forgeVersion}-installer.jar`;
+}
+
+// Example:
+const url = getForgeInstallerUrl('1.20.1', '47.2.0');
+// Returns: "https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar"
+```
+
+<Note>
+If the URL returns 404, the Forge version does not exist or the version number format is incorrect.
+</Note>
+
+---
+
+## Vanilla Minecraft Installation
+
+### ensureMinecraftInstalled
+
+Ensures that the base Minecraft version is installed before installing Forge.
+
+<ParamField path="minecraftDir" type="string" required>
+  Path to the Minecraft installation directory
+</ParamField>
+
+<ParamField path="mcVersion" type="string" required>
+  Minecraft version to install
+</ParamField>
+
+<ResponseField name="returns" type="Promise<void>">
+  Resolves when Minecraft is installed
+</ResponseField>
+
+Process (src/main/services/forgeInstaller.js:24-57):
+
+1. Checks if vanilla Minecraft is already installed using `isMinecraftInstalled()`
+2. Downloads version manifest from Mojang: `https://piston-meta.mojang.com/mc/game/version_manifest_v2.json`
+3. Finds version entry and downloads version-specific metadata
+4. Downloads client JAR to `versions/{version}/{version}.jar`
+5. Saves version JSON to `versions/{version}/{version}.json`
+
+```javascript
+// Installation check (src/main/services/forgeInstaller.js:18-22)
+function isMinecraftInstalled(minecraftDir, mcVersion) {
+  const jarPath = path.join(minecraftDir, 'versions', mcVersion, `${mcVersion}.jar`);
+  const jsonPath = path.join(minecraftDir, 'versions', mcVersion, `${mcVersion}.json`);
+  return fs.existsSync(jarPath) && fs.existsSync(jsonPath);
+}
+```
+
+<Note>
+Forge installer requires both the client JAR and version JSON to exist. If either is missing, vanilla Minecraft will be re-downloaded.
+</Note>
+
+---
+
+## Forge Installer Execution
+
+### runForgeInstaller
+
+Executes the Forge installer JAR in client installation mode.
+
+<ParamField path="javaPath" type="string" required>
+  Path to Java executable
+</ParamField>
+
+<ParamField path="installerPath" type="string" required>
+  Path to the downloaded Forge installer JAR
+</ParamField>
+
+<ParamField path="minecraftDir" type="string" required>
+  Target Minecraft directory for installation
+</ParamField>
+
+<ResponseField name="returns" type="Promise<void>">
+  Resolves on successful installation (exit code 0)
+</ResponseField>
+
+Implementation (src/main/services/forgeInstaller.js:116-175):
+
+```javascript
+function runForgeInstaller(javaPath, installerPath, minecraftDir) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-jar', installerPath,
+      '--installClient', minecraftDir,
+    ];
+
+    const child = spawn(javaPath, args, {
+      cwd: minecraftDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // ... output handling and exit code checking
+  });
+}
+```
+
+#### Command Line
+
+```bash
+java -jar forge-1.20.1-47.2.0-installer.jar --installClient /home/user/.minecraft
+```
+
+#### Output Handling
+
+The installer produces verbose output. The service filters and throttles logging:
+
+```javascript
+// Output processing (src/main/services/forgeInstaller.js:134-150)
+child.stdout.on('data', (data) => {
+  const text = data.toString().trim();
+  if (!text) return;
+  stdout += text + '\n';
+
+  // Only send important lines to UI, throttle the rest
+  const now = Date.now();
+  const isImportant = text.includes('Successfully') || 
+                       text.includes('error') || 
+                       text.includes('Downloading') || 
+                       text.includes('Download');
+  if (isImportant) {
+    log(`[Forge] ${text}`);
+  } else if (now - lastUiUpdate > 500) {
+    // Throttle: max 1 update per 500ms for verbose output
+    const shortLine = text.length > 80 ? text.substring(0, 80) + '...' : text;
+    send('status', `Instalando Forge... ${shortLine}`);
+    lastUiUpdate = now;
+  }
+});
+```
+
+**Important log patterns**:
+- `Successfully` - Installation completed
+- `error` - Installation error
+- `Downloading` / `Download` - Downloading libraries
+
+<Note>
+Verbose output is throttled to one status update every 500ms to avoid UI spam (see src/main/services/forgeInstaller.js:145-148).
+</Note>
+
+#### Exit Code Handling
+
+```javascript
+// Exit handling (src/main/services/forgeInstaller.js:160-169)
+child.on('close', (code) => {
+  if (code === 0) {
+    log('Forge installer finalizado com sucesso.');
+    resolve();
+  } else {
+    const errorMsg = `Forge installer falhou (código ${code}).\n${stderr || stdout}`;
+    log(errorMsg);
+    reject(new Error(errorMsg));
+  }
+});
+```
+
+---
+
+## Launcher Profiles Requirement
+
+The Forge installer requires `launcher_profiles.json` to exist in the Minecraft directory:
+
+```javascript
+// Profile creation (src/main/services/forgeInstaller.js:79-83)
+const profilesPath = path.join(minecraftDir, 'launcher_profiles.json');
+if (!fs.existsSync(profilesPath)) {
+  fs.writeFileSync(profilesPath, JSON.stringify({ profiles: {}, selectedProfile: '' }, null, 2));
+  log('Criado launcher_profiles.json para o Forge installer.');
+}
+```
+
+Minimal profile structure:
+
+```json
+{
+  "profiles": {},
+  "selectedProfile": ""
+}
+```
+
+This file is created automatically if missing (src/main/services/forgeInstaller.js:79-83).
+
+---
+
+## Installation Verification
+
+After running the installer, the service verifies that Forge was actually installed:
+
+```javascript
+// Verification (src/main/services/forgeInstaller.js:104-107)
+if (!isForgeInstalled(minecraftDir, mcVersion, forgeVersion)) {
+  throw new Error(`Falha na instalação do Forge ${forgeId}. Verifique os logs.`);
+}
+```
+
+Expected file after installation:
+
+```
+minecraftDir/
+└── versions/
+    └── 1.20.1-forge-47.2.0/
+        ├── 1.20.1-forge-47.2.0.json   # Forge version manifest
+        └── 1.20.1-forge-47.2.0.jar    # Forge launcher (may not exist for newer versions)
+```
+
+<Note>
+Newer Forge versions (1.17+) may not create a separate JAR file. The presence of the JSON file is sufficient to confirm installation.
+</Note>
+
+---
+
+## Installer Caching
+
+Installer JARs are cached to avoid re-downloading:
+
+```javascript
+// Cache directory (src/main/services/forgeInstaller.js:88-95)
+const cacheDir = path.join(BASE_DIR, 'cache');
+fs.mkdirSync(cacheDir, { recursive: true });
+const installerPath = path.join(cacheDir, `forge-${mcVersion}-${forgeVersion}-installer.jar`);
+
+if (!fs.existsSync(installerPath)) {
+  const installerUrl = getForgeInstallerUrl(mcVersion, forgeVersion);
+  await downloadFile(installerUrl, installerPath, `Forge ${forgeVersion} installer`);
+  log('Forge installer baixado.');
+}
+```
+
+Cache location: `{BASE_DIR}/cache/forge-{mcVersion}-{forgeVersion}-installer.jar`
+
+The installer is deleted after successful installation:
+
+```javascript
+// Cleanup (src/main/services/forgeInstaller.js:113)
+try { fs.unlinkSync(installerPath); } catch {}
+```
+
+---
+
+## IPC Status Events
+
+The service sends `status` events to update the UI during installation:
+
+```javascript
+// Status updates throughout the process
+send('status', `Baixando Minecraft ${mcVersion}...`);
+send('status', `Baixando Forge ${forgeVersion}...`);
+send('status', `Instalando Forge ${forgeVersion}...`);
+send('status', `Forge ${forgeVersion} instalado!`);
+```
+
+**Event flow**:
+
+1. `Baixando Minecraft {version}...` (if vanilla not installed)
+2. `Baixando Forge {version}...` (downloading installer)
+3. `Instalando Forge...` (running installer, with periodic updates)
+4. `Forge {version} instalado!` (success)
+
+---
+
+## Usage Examples
+
+### Basic Installation
+
+```javascript
+const { installForge } = require('./services/forgeInstaller');
+
+async function setupModdedMinecraft() {
+  try {
+    await installForge(
+      'C:\\Program Files\\Java\\jdk-17\\bin\\java.exe',
+      'C:\\Users\\Player\\AppData\\Roaming\\.minecraft',
+      '1.20.1',
+      '47.2.0'
+    );
+    console.log('Ready to launch modded Minecraft!');
+  } catch (error) {
+    console.error('Setup failed:', error.message);
+  }
+}
+
+setupModdedMinecraft();
+```
+
+### Check Before Install
+
+```javascript
+const { isForgeInstalled, installForge } = require('./services/forgeInstaller');
+
+const mcVersion = '1.20.1';
+const forgeVersion = '47.2.0';
+const minecraftDir = '/home/user/.minecraft';
+
+if (isForgeInstalled(minecraftDir, mcVersion, forgeVersion)) {
+  console.log('Forge is already installed, skipping...');
+} else {
+  console.log('Installing Forge...');
+  await installForge('/usr/bin/java', minecraftDir, mcVersion, forgeVersion);
+}
+```
+
+### Listen to Installation Progress
+
+```javascript
+const { ipcMain } = require('electron');
+const { installForge } = require('./services/forgeInstaller');
+
+ipcMain.on('status', (event, message) => {
+  console.log('Installation status:', message);
+  mainWindow.webContents.send('forge-status', message);
+});
+
+try {
+  await installForge(javaPath, minecraftDir, '1.20.1', '47.2.0');
+  mainWindow.webContents.send('forge-complete');
+} catch (error) {
+  mainWindow.webContents.send('forge-error', error.message);
+}
+```
+
+---
+
+## Common Issues
+
+### Invalid Forge Version
+
+**Error**: 404 when downloading installer
+
+**Cause**: Forge version doesn't exist for the Minecraft version
+
+**Solution**: Check [Forge downloads](https://files.minecraftforge.net/) for valid version numbers
+
+### Java Version Mismatch
+
+**Error**: Installer fails with Java version errors
+
+**Cause**: Forge requires specific Java versions (Java 8 for 1.12-1.16, Java 17+ for 1.17+)
+
+**Solution**: Use the correct Java version for your Minecraft version
+
+### Missing Vanilla Minecraft
+
+**Error**: Installer fails with missing client.jar
+
+**Cause**: Vanilla Minecraft not installed (this shouldn't happen as it's auto-installed)
+
+**Solution**: Call `ensureMinecraftInstalled()` first or check network connectivity
+
+### Installer Hangs
+
+**Error**: Installer process never exits
+
+**Cause**: Network issues downloading Forge libraries
+
+**Solution**: Check firewall settings and network connectivity. Forge downloads libraries from Maven Central.

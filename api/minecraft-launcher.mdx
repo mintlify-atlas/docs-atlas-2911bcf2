@@ -1,0 +1,478 @@
+---
+title: "Minecraft Launcher"
+description: "Core Minecraft game launcher service with version management, asset handling, and process spawning"
+icon: "rocket"
+---
+
+## Overview
+
+The `minecraftLauncher.js` service handles the complete Minecraft launch process including version JSON parsing, library management, asset downloading, native library extraction, and game process spawning. It supports both vanilla Minecraft and modded versions (Forge).
+
+Source: `src/main/services/minecraftLauncher.js`
+
+## Main Functions
+
+### launchMinecraft
+
+Launches a Minecraft instance with the specified configuration.
+
+<ParamField path="options" type="object" required>
+  Configuration object for the Minecraft launch
+  
+  <ParamField path="javaPath" type="string" required>
+    Absolute path to the Java executable
+  </ParamField>
+  
+  <ParamField path="minecraftDir" type="string" required>
+    Path to the Minecraft installation directory
+  </ParamField>
+  
+  <ParamField path="ram" type="number" required>
+    RAM allocation in megabytes (e.g., 4096 for 4GB)
+  </ParamField>
+  
+  <ParamField path="username" type="string" required>
+    Player username for the game session
+  </ParamField>
+  
+  <ParamField path="mcVersion" type="string" required>
+    Minecraft version ID (e.g., "1.20.1")
+  </ParamField>
+  
+  <ParamField path="forgeVersion" type="string">
+    Optional Forge version (e.g., "47.2.0"). Omit for vanilla launches.
+  </ParamField>
+</ParamField>
+
+<ResponseField name="returns" type="Promise<number>">
+  Process ID (PID) of the spawned Minecraft process
+</ResponseField>
+
+#### Implementation Details
+
+The function performs these operations in sequence (src/main/services/minecraftLauncher.js:271-395):
+
+1. **Version JSON Loading**: Resolves `inheritsFrom` chains for modded versions
+2. **Library Verification**: Downloads missing libraries from Maven repositories
+3. **Asset Management**: Downloads asset index and missing asset objects
+4. **Native Extraction**: Extracts platform-specific native libraries
+5. **Classpath Construction**: Builds complete classpath from all libraries
+6. **Process Spawning**: Launches Java with proper JVM and game arguments
+
+<Note>
+For Forge launches using `cpw.mods.bootstraplauncher.BootstrapLauncher`, the main Minecraft client JAR is **not** added to the classpath to avoid module duplication errors (see src/main/services/minecraftLauncher.js:308-312).
+</Note>
+
+```javascript
+const { launchMinecraft } = require('./services/minecraftLauncher');
+
+const pid = await launchMinecraft({
+  javaPath: '/path/to/java',
+  minecraftDir: '/path/to/.minecraft',
+  ram: 4096,
+  username: 'Player',
+  mcVersion: '1.20.1',
+  forgeVersion: '47.2.0' // Optional
+});
+
+console.log(`Minecraft launched with PID: ${pid}`);
+```
+
+#### Error Conditions
+
+- Throws if version JSON is not found (src/main/services/minecraftLauncher.js:59)
+- Throws if Java executable path is invalid
+- Throws if required libraries cannot be downloaded
+- Child process errors are logged but don't throw (detached process)
+
+---
+
+### getRequiredJavaVersion
+
+Determines the required Java version for a given Minecraft version.
+
+<ParamField path="minecraftVersion" type="string" required>
+  Minecraft version ID (e.g., "1.20.1", "1.16.5")
+</ParamField>
+
+<ResponseField name="returns" type="object">
+  Object containing Java version requirements
+  
+  <ResponseField name="version" type="string">
+    Java version string (e.g., "17", "8")
+  </ResponseField>
+  
+  <ResponseField name="major" type="number">
+    Major version number for comparison (e.g., 17, 8)
+  </ResponseField>
+</ResponseField>
+
+The function matches against prefixes defined in `JAVA_VERSIONS` configuration (src/main/services/minecraftLauncher.js:13-18).
+
+```javascript
+const { getRequiredJavaVersion } = require('./services/minecraftLauncher');
+
+const javaReq = getRequiredJavaVersion('1.20.1');
+console.log(`Requires Java ${javaReq.version} (major: ${javaReq.major})`);
+// Output: Requires Java 17 (major: 17)
+```
+
+---
+
+### resolveJavaForLaunch
+
+Resolves the Java executable path for launching Minecraft.
+
+<ParamField path="majorVersion" type="number" required>
+  Required Java major version (e.g., 17, 8)
+</ParamField>
+
+<ResponseField name="returns" type="string">
+  Absolute path to the Java executable
+</ResponseField>
+
+Resolution priority (src/main/services/minecraftLauncher.js:20-35):
+
+1. **Bootstrap-resolved path**: Uses `state.resolvedJavaPath` if available
+2. **Fallback detection**: Uses `RuntimeDetector` to scan for installed Java
+3. **Error**: Throws if no suitable Java installation is found
+
+```javascript
+const { resolveJavaForLaunch } = require('./services/minecraftLauncher');
+
+try {
+  const javaPath = resolveJavaForLaunch(17);
+  console.log(`Using Java: ${javaPath}`);
+} catch (error) {
+  console.error('Java not found:', error.message);
+}
+```
+
+<Note>
+The error message is localized in Portuguese: "Java >= {version} nao encontrado. Reinicie o launcher para instalar."
+</Note>
+
+---
+
+## Helper Functions
+
+### mavenToPath
+
+Converts Maven coordinates to a relative file path.
+
+<ParamField path="name" type="string" required>
+  Maven coordinate in format `group:artifact:version[:classifier]`
+</ParamField>
+
+<ResponseField name="returns" type="string">
+  Relative file path for the library (e.g., `com/example/library/1.0/library-1.0.jar`)
+</ResponseField>
+
+Implementation (src/main/services/minecraftLauncher.js:40-50):
+
+```javascript
+// Internal usage example
+const libPath = mavenToPath('net.minecraftforge:forge:1.20.1-47.2.0');
+// Returns: net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0.jar
+
+const nativePath = mavenToPath('org.lwjgl:lwjgl-glfw:3.3.1:natives-windows');
+// Returns: org/lwjgl/lwjgl-glfw/3.3.1/lwjgl-glfw-3.3.1-natives-windows.jar
+```
+
+---
+
+### loadVersionJson
+
+Recursively loads and merges version JSON files, following `inheritsFrom` chains.
+
+<ParamField path="versionsDir" type="string" required>
+  Path to the versions directory
+</ParamField>
+
+<ParamField path="versionId" type="string" required>
+  Version ID to load (e.g., "1.20.1-forge-47.2.0")
+</ParamField>
+
+<ResponseField name="returns" type="object">
+  Merged version data object
+  
+  <ResponseField name="mainClass" type="string">
+    Main class to launch (e.g., `net.minecraft.client.main.Main` or `cpw.mods.bootstraplauncher.BootstrapLauncher`)
+  </ResponseField>
+  
+  <ResponseField name="libraries" type="array">
+    Array of library objects with download information
+  </ResponseField>
+  
+  <ResponseField name="arguments" type="object">
+    JVM and game arguments arrays
+  </ResponseField>
+  
+  <ResponseField name="assetIndex" type="object">
+    Asset index metadata (id, url, sha1)
+  </ResponseField>
+  
+  <ResponseField name="_parentId" type="string | null">
+    Parent version ID if inherited, null otherwise
+  </ResponseField>
+</ResponseField>
+
+Merge behavior (src/main/services/minecraftLauncher.js:56-85):
+- Child `mainClass` overrides parent
+- Libraries are concatenated (parent first, then child)
+- Arguments are concatenated for both JVM and game arrays
+
+<Note>
+Throws if version JSON file is not found at the expected path.
+</Note>
+
+---
+
+### isAllowed
+
+Evaluates OS and feature rules to determine if a library or argument should be included.
+
+<ParamField path="rules" type="array">
+  Array of rule objects from version JSON
+</ParamField>
+
+<ResponseField name="returns" type="boolean">
+  `true` if the entry is allowed, `false` otherwise
+</ResponseField>
+
+Rule evaluation logic (src/main/services/minecraftLauncher.js:91-106):
+- Returns `true` if no rules are specified
+- Rejects entries requiring unsupported features (e.g., `has_custom_resolution`, `is_demo_user`)
+- Evaluates OS-specific rules for Windows platform
+- Uses last-match-wins strategy for multiple rules
+
+```javascript
+// Example rule evaluation
+const rules = [
+  { action: 'allow', os: { name: 'windows' } },
+  { action: 'disallow', os: { name: 'linux' } }
+];
+
+const allowed = isAllowed(rules);
+// Returns: true (on Windows)
+```
+
+---
+
+## Asset Management
+
+### ensureAssets
+
+Downloads missing Minecraft assets (textures, sounds, fonts, etc.).
+
+<ParamField path="assetIndex" type="object" required>
+  Asset index metadata from version JSON
+  
+  <ParamField path="url" type="string" required>
+    URL to download the asset index JSON
+  </ParamField>
+  
+  <ParamField path="id" type="string" required>
+    Asset index ID (e.g., "1.20", "legacy")
+  </ParamField>
+</ParamField>
+
+<ParamField path="assetsDir" type="string" required>
+  Path to the assets directory
+</ParamField>
+
+<ResponseField name="returns" type="Promise<void>">
+  Resolves when all assets are downloaded
+</ResponseField>
+
+Implementation (src/main/services/minecraftLauncher.js:151-204):
+
+1. Downloads asset index JSON to `assets/indexes/{id}.json`
+2. Scans which asset objects are missing
+3. Downloads missing assets from `https://resources.download.minecraft.net/`
+4. Sends progress updates via IPC: `download-progress` and `status` events
+5. Stores assets in `assets/objects/{prefix}/{hash}` structure
+
+<Note>
+Skips download if all assets already exist. Progress updates are sent for each downloaded asset with percentage calculation.
+</Note>
+
+---
+
+### ensureLibraries
+
+Downloads missing library JARs required for Minecraft.
+
+<ParamField path="libraries" type="array" required>
+  Array of library objects from version JSON
+</ParamField>
+
+<ParamField path="librariesDir" type="string" required>
+  Path to the libraries directory
+</ParamField>
+
+<ResponseField name="returns" type="Promise<void>">
+  Resolves when all required libraries are downloaded
+</ResponseField>
+
+Behavior (src/main/services/minecraftLauncher.js:125-146):
+- Skips libraries that don't pass OS rules check
+- Resolves library paths using `downloads.artifact.path` or Maven coordinates
+- Creates parent directories as needed
+- Logs count of downloaded libraries
+
+---
+
+### extractNatives
+
+Extracts platform-specific native libraries from JARs.
+
+<ParamField path="libraries" type="array" required>
+  Array of library objects from version JSON
+</ParamField>
+
+<ParamField path="librariesDir" type="string" required>
+  Path to the libraries directory
+</ParamField>
+
+<ParamField path="nativesDir" type="string" required>
+  Target directory for extracted natives
+</ParamField>
+
+<ResponseField name="returns" type="Promise<void>">
+  Resolves when all natives are extracted
+</ResponseField>
+
+Optimization (src/main/services/minecraftLauncher.js:209-252):
+- Uses marker file `.natives-extracted` to skip re-extraction
+- Downloads native JARs if missing
+- Filters out META-INF directory during extraction
+- Handles extraction errors gracefully with warnings
+
+```javascript
+// Natives are typically architecture-specific
+// Example: lwjgl-glfw-3.3.1-natives-windows-x64.jar
+// Extracted to: versions/{version}/natives/
+```
+
+---
+
+## Argument Resolution
+
+### resolveArg
+
+Processes argument values, replacing variable placeholders and evaluating rules.
+
+<ParamField path="arg" type="string | object" required>
+  Argument value or complex argument object with rules
+</ParamField>
+
+<ParamField path="vars" type="object" required>
+  Variable substitution map (e.g., `{auth_player_name: 'Player', classpath: '...'}`)
+</ParamField>
+
+<ResponseField name="returns" type="string | array | null">
+  Resolved argument value(s), or `null` if rules disallow
+</ResponseField>
+
+Processing logic (src/main/services/minecraftLauncher.js:257-269):
+
+1. **String arguments**: Replace `${variableName}` placeholders
+2. **Object arguments**: Evaluate rules, then recursively resolve values
+3. **Array values**: Map each element through resolution
+4. **Filtered nulls**: Remove disallowed entries from result
+
+```javascript
+// Variable substitution example
+const vars = { game_directory: '/minecraft', auth_player_name: 'Steve' };
+
+const resolved = resolveArg('--gameDir ${game_directory}', vars);
+// Returns: "--gameDir /minecraft"
+
+// Complex argument with rules
+const complexArg = {
+  rules: [{ action: 'allow', os: { name: 'windows' } }],
+  value: ['--demo']
+};
+const result = resolveArg(complexArg, vars);
+// Returns: ['--demo'] on Windows, null on other platforms
+```
+
+---
+
+## Launch Configuration
+
+The launcher constructs JVM arguments (src/main/services/minecraftLauncher.js:340-357):
+
+```javascript
+// Base JVM arguments
+const jvmArgs = [
+  `-Xms512m`,                    // Initial heap size
+  `-Xmx${ramMb}m`,               // Maximum heap size
+  `-XX:+UseG1GC`,                // G1 garbage collector
+  `-XX:+ParallelRefProcEnabled`, // Parallel reference processing
+  `-XX:MaxGCPauseMillis=200`,    // GC pause time target
+];
+
+// Plus version-specific args from JSON (module paths, --add-opens, etc.)
+```
+
+Variable substitution map (src/main/services/minecraftLauncher.js:319-337):
+
+```javascript
+const vars = {
+  auth_player_name: username,
+  version_name: forgeVersionId,
+  game_directory: minecraftDir,
+  assets_root: assetsDir,
+  assets_index_name: assetIndex?.id,
+  auth_uuid: '00000000-0000-0000-0000-000000000000',
+  auth_access_token: '0',
+  clientid: '',
+  auth_xuid: '0',
+  user_type: 'legacy',
+  version_type: 'release',
+  natives_directory: nativesDir,
+  launcher_name: 'UmuCraft',
+  launcher_version: '1.0',
+  classpath: classpath.join(sep),
+  classpath_separator: sep,
+  library_directory: librariesDir,
+};
+```
+
+---
+
+## Process Management
+
+The spawned Minecraft process (src/main/services/minecraftLauncher.js:376-394):
+
+- **Detached mode**: Process continues running after launcher exits
+- **Working directory**: Set to `minecraftDir`
+- **Output handling**: 
+  - stdout is piped but not logged (can be verbose)
+  - stderr is logged with `[MC]` prefix, truncated to 200 chars
+- **Exit codes**: Non-zero codes are logged but don't throw errors
+- **Unref**: Process reference is released, allowing launcher to exit
+
+```javascript
+const child = spawn(javaPath, args, {
+  cwd: minecraftDir,
+  detached: true,
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+
+child.stderr.on('data', (data) => {
+  const text = data.toString().trim();
+  if (text) log(`[MC] ${text.substring(0, 200)}`);
+});
+
+child.on('close', (code) => {
+  if (code && code !== 0) {
+    log(`[MC] Processo encerrado com código ${code}`);
+  }
+});
+
+child.unref();
+return child.pid;
+```

@@ -1,0 +1,304 @@
+---
+title: 'Server IPC Handlers'
+description: 'Minecraft server status checks and ping operations'
+---
+
+## Overview
+
+The Server IPC module (`src/main/ipc/serverIpc.js`) provides functionality to check the status of Minecraft servers using the server list ping protocol.
+
+## Handlers
+
+### ping-server
+
+Pings a Minecraft server to retrieve status information including online players, max players, version, and MOTD.
+
+<ParamField path="opts" type="object" required>
+  <Expandable title="properties">
+    <ParamField path="host" type="string" required>
+      Server hostname or IP address
+    </ParamField>
+    <ParamField path="port" type="number" optional>
+      Server port (default: 25565)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="Returns" type="object">
+  <Expandable title="properties">
+    <ParamField path="online" type="boolean">
+      Whether the server is reachable
+    </ParamField>
+    <ParamField path="players" type="object" optional>
+      Player count information
+      <Expandable title="players properties">
+        <ParamField path="online" type="number">
+          Current online players
+        </ParamField>
+        <ParamField path="max" type="number">
+          Maximum player capacity
+        </ParamField>
+      </Expandable>
+    </ParamField>
+    <ParamField path="version" type="object" optional>
+      Server version information
+      <Expandable title="version properties">
+        <ParamField path="name" type="string">
+          Version string (e.g., "1.20.1")
+        </ParamField>
+        <ParamField path="protocol" type="number">
+          Protocol version number
+        </ParamField>
+      </Expandable>
+    </ParamField>
+    <ParamField path="description" type="string | object" optional>
+      Server MOTD (Message of the Day)
+    </ParamField>
+    <ParamField path="favicon" type="string" optional>
+      Base64-encoded server icon
+    </ParamField>
+    <ParamField path="latency" type="number" optional>
+      Ping latency in milliseconds
+    </ParamField>
+    <ParamField path="error" type="string" optional>
+      Error message if ping failed
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example: Basic Ping
+
+```javascript
+// Renderer process
+const status = await window.launcher.pingServer({
+  host: 'play.hypixel.net'
+});
+
+if (status.online) {
+  console.log('Server is online!');
+  console.log('Players:', status.players.online, '/', status.players.max);
+  console.log('Version:', status.version.name);
+  console.log('Latency:', status.latency, 'ms');
+} else {
+  console.log('Server is offline or unreachable');
+  console.log('Error:', status.error);
+}
+```
+
+#### Example: Custom Port
+
+```javascript
+// Ping server on custom port
+const status = await window.launcher.pingServer({
+  host: 'mc.example.com',
+  port: 25566
+});
+```
+
+#### Example: Display Server Status
+
+```javascript
+// Complete server status display
+async function displayServerStatus(host, port = 25565) {
+  const status = await window.launcher.pingServer({ host, port });
+  
+  if (!status.online) {
+    return {
+      status: 'Offline',
+      error: status.error || 'Server unreachable'
+    };
+  }
+  
+  return {
+    status: 'Online',
+    players: `${status.players.online}/${status.players.max}`,
+    version: status.version.name,
+    ping: `${status.latency}ms`,
+    motd: status.description
+  };
+}
+
+// Usage
+const serverInfo = await displayServerStatus('play.umucraft.com');
+console.log(serverInfo);
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/serverIpc.js:5-9
+function registerServerIpc() {
+  ipcMain.handle('ping-server', async (_, { host, port }) => {
+    return pingMinecraftServer(host, port || 25565);
+  });
+}
+```
+
+## Server Ping Protocol
+
+The handler uses the Minecraft Server List Ping protocol to retrieve server information. This is the same protocol used by the Minecraft client's multiplayer server list.
+
+### Protocol Details
+
+1. Opens TCP connection to server
+2. Sends handshake packet (protocol 47+)
+3. Sends status request
+4. Receives JSON status response
+5. Sends ping packet to measure latency
+6. Receives pong packet
+
+## Response Examples
+
+### Online Server
+
+```json
+{
+  "online": true,
+  "players": {
+    "online": 42,
+    "max": 100
+  },
+  "version": {
+    "name": "1.20.1",
+    "protocol": 763
+  },
+  "description": "A Minecraft Server",
+  "latency": 45,
+  "favicon": "data:image/png;base64,iVBOR..."
+}
+```
+
+### Offline Server
+
+```json
+{
+  "online": false,
+  "error": "ECONNREFUSED: Connection refused"
+}
+```
+
+## MOTD Formatting
+
+The `description` field can be either:
+
+- **String** - Plain text MOTD
+- **Object** - Formatted text with color codes and styling
+
+```javascript
+// Plain text
+status.description = "Welcome to the server!";
+
+// Formatted text (Minecraft chat JSON)
+status.description = {
+  text: "Welcome ",
+  extra: [
+    { text: "to the server!", color: "gold", bold: true }
+  ]
+};
+```
+
+## Error Handling
+
+Common error scenarios:
+
+| Error | Cause |
+|-------|-------|
+| `ECONNREFUSED` | Server offline or port closed |
+| `ETIMEDOUT` | Server not responding |
+| `ENOTFOUND` | Invalid hostname (DNS lookup failed) |
+| `ECONNRESET` | Connection dropped during ping |
+
+```javascript
+// Robust error handling
+async function safePingServer(host, port = 25565) {
+  try {
+    const status = await window.launcher.pingServer({ host, port });
+    
+    if (!status.online) {
+      throw new Error(status.error || 'Server offline');
+    }
+    
+    return status;
+  } catch (err) {
+    console.error('Failed to ping server:', err.message);
+    return null;
+  }
+}
+```
+
+## Use Cases
+
+### Server Status Widget
+
+Display real-time server status in launcher UI:
+
+```javascript
+let statusInterval;
+
+async function startServerMonitoring(host, port = 25565) {
+  async function updateStatus() {
+    const status = await window.launcher.pingServer({ host, port });
+    
+    // Update UI elements
+    document.getElementById('status-indicator').className = 
+      status.online ? 'online' : 'offline';
+    
+    if (status.online) {
+      document.getElementById('player-count').textContent = 
+        `${status.players.online}/${status.players.max}`;
+      document.getElementById('ping').textContent = 
+        `${status.latency}ms`;
+    }
+  }
+  
+  // Update immediately
+  await updateStatus();
+  
+  // Update every 30 seconds
+  statusInterval = setInterval(updateStatus, 30000);
+}
+
+function stopServerMonitoring() {
+  clearInterval(statusInterval);
+}
+```
+
+### Pre-Launch Server Check
+
+Verify server is online before launching:
+
+```javascript
+async function launchWithServerCheck(config, manifest, serverHost) {
+  // Check if server is online
+  const status = await window.launcher.pingServer({ host: serverHost });
+  
+  if (!status.online) {
+    return {
+      ok: false,
+      error: 'Server is currently offline. Please try again later.'
+    };
+  }
+  
+  // Verify version compatibility
+  const manifestVersion = manifest.minecraftVersion;
+  if (status.version.name !== manifestVersion) {
+    console.warn(
+      `Version mismatch: Server ${status.version.name}, Client ${manifestVersion}`
+    );
+  }
+  
+  // Launch game
+  return window.launcher.syncAndLaunch({ config, manifest });
+}
+```
+
+## Related Services
+
+This handler delegates to:
+
+- `serverPingService.js` - Implements Minecraft Server List Ping protocol
+
+## Protocol References
+
+- [Minecraft Protocol - Server List Ping](https://wiki.vg/Server_List_Ping)
+- [Protocol Version Numbers](https://wiki.vg/Protocol_version_numbers)

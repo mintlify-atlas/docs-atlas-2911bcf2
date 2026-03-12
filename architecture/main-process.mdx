@@ -1,0 +1,594 @@
+---
+title: Main Process Architecture
+description: Deep dive into the Electron main process (Node.js backend)
+---
+
+## Overview
+
+The main process is the Node.js backend that runs the Electron application. It has full system access and manages:
+
+- Application lifecycle (startup, quit)
+- Window creation and management
+- IPC communication with renderer
+- File I/O and system operations
+- Java detection and installation
+- Minecraft process spawning
+- Mod synchronization
+
+**Module System**: CommonJS (`require()` / `module.exports`)
+
+## Entry Point: index.js
+
+**File**: `src/main/index.js`
+
+The entry point orchestrates the application lifecycle:
+
+```javascript
+const { app } = require('electron');
+const { ensureDirectories, BASE_DIR } = require('./utils/paths');
+const { createMainWindow } = require('./windows/mainWindow');
+const { createBootstrapWindow } = require('./windows/bootstrapWindow');
+const { ensureDefaultProfile } = require('./services/profileService');
+const BootstrapController = require('./bootstrap/controller');
+const state = require('./state');
+
+// Register all IPC handlers at module load time
+const { registerWindowIpc } = require('./ipc/windowIpc');
+const { registerBootstrapIpc } = require('./ipc/bootstrapIpc');
+const { registerConfigIpc } = require('./ipc/configIpc');
+const { registerLauncherIpc } = require('./ipc/launcherIpc');
+const { registerServerIpc } = require('./ipc/serverIpc');
+const { registerUtilIpc } = require('./ipc/utilIpc');
+
+registerWindowIpc();
+registerBootstrapIpc();
+registerConfigIpc();
+registerLauncherIpc();
+registerServerIpc();
+registerUtilIpc();
+```
+
+### Startup Flow
+
+```javascript
+app.whenReady().then(() => {
+  ensureDirectories();        // Create ~/.UmuCraft/ structure
+  createBootstrapWindow();    // 520×400 window for Java setup
+  runBootstrap();             // Detect/install Java
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+```
+
+### Bootstrap Process
+
+```javascript
+async function runBootstrap() {
+  state.bootstrapCtrl = new BootstrapController(BASE_DIR);
+  
+  await new Promise((resolve) => {
+    state.bootstrapWindow.webContents.once('did-finish-load', resolve);
+  });
+  
+  state.bootstrapCtrl.setSender(state.bootstrapWindow.webContents);
+  const result = await state.bootstrapCtrl.run();
+  
+  if (!result.ok) return;
+  
+  state.resolvedJavaPath = result.javaPath;
+  
+  state.bootstrapCtrl.logger.state('preparing_profile');
+  await ensureDefaultProfile();
+  
+  await new Promise(r => setTimeout(r, 800));
+  
+  createMainWindow();         // 960×640 main launcher window
+  state.bootstrapWindow.close();
+  state.bootstrapWindow = null;
+}
+```
+
+## Shared State
+
+**File**: `src/main/state.js`
+
+A mutable object shared across all main-process modules:
+
+```javascript
+module.exports = {
+  mainWindow: null,           // BrowserWindow instance
+  bootstrapWindow: null,      // BrowserWindow instance for bootstrap
+  bootstrapCtrl: null,        // BootstrapController instance
+  resolvedJavaPath: null,     // Path to java executable
+};
+```
+
+Modules import this to access/mutate shared state:
+
+```javascript
+const state = require('./state');
+state.mainWindow.minimize();
+```
+
+## Windows Layer
+
+Manages Electron `BrowserWindow` creation with security configurations.
+
+### Main Window
+
+**File**: `src/main/windows/mainWindow.js`
+
+```javascript
+const { BrowserWindow } = require('electron');
+const path = require('path');
+const state = require('../state');
+
+function createMainWindow() {
+  state.mainWindow = new BrowserWindow({
+    width: 960,
+    height: 640,
+    minWidth: 800,
+    minHeight: 500,
+    frame: false,              // Custom titlebar
+    transparent: false,
+    resizable: true,
+    icon: path.join(__dirname, '../../assets/icon.png'),
+    webPreferences: {
+      nodeIntegration: false,  // Security: no Node.js in renderer
+      contextIsolation: true,  // Security: isolate preload context
+      preload: path.join(__dirname, '../preload.js'),
+    },
+    backgroundColor: '#0d1117',
+  });
+
+  state.mainWindow.loadFile(
+    path.join(__dirname, '../../renderer/index.html')
+  );
+
+  if (process.argv.includes('--dev')) {
+    state.mainWindow.webContents.openDevTools();
+  }
+}
+
+module.exports = { createMainWindow };
+```
+
+### Bootstrap Window
+
+**File**: `src/main/windows/bootstrapWindow.js`
+
+Similar structure, creates a smaller non-resizable window (520×400) for Java detection/installation UI.
+
+## IPC Layer
+
+IPC handlers are organized by domain, each in a separate file under `src/main/ipc/`. All handlers are registered at startup in `index.js`.
+
+### Window Controls
+
+**File**: `src/main/ipc/windowIpc.js`
+
+```javascript
+const { ipcMain, app } = require('electron');
+const state = require('../state');
+
+function registerWindowIpc() {
+  ipcMain.handle('window-minimize', () => 
+    state.mainWindow.minimize()
+  );
+  
+  ipcMain.handle('window-maximize', () => {
+    state.mainWindow.isMaximized() 
+      ? state.mainWindow.unmaximize() 
+      : state.mainWindow.maximize();
+  });
+  
+  ipcMain.handle('window-close', () => 
+    app.quit()
+  );
+}
+
+module.exports = { registerWindowIpc };
+```
+
+Called from renderer via:
+
+```javascript
+window.launcher.minimize();
+window.launcher.maximize();
+window.launcher.close();
+```
+
+### Config Management
+
+**File**: `src/main/ipc/configIpc.js`
+
+```javascript
+const { ipcMain } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { BASE_DIR, CONFIG } = require('../utils/paths');
+
+function registerConfigIpc() {
+  ipcMain.handle('load-config', () => {
+    const configPath = path.join(BASE_DIR, 'config.json');
+    if (fs.existsSync(configPath)) {
+      try { 
+        return JSON.parse(fs.readFileSync(configPath, 'utf8')); 
+      } catch {}
+    }
+    // Return defaults
+    return {
+      username: '',
+      ram: 4096,
+      selectedProfile: CONFIG.DEFAULT_PROFILE,
+      minecraftDir: BASE_DIR,
+      profiles: [],
+    };
+  });
+
+  ipcMain.handle('save-config', (_, config) => {
+    const configPath = path.join(BASE_DIR, 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    return true;
+  });
+}
+```
+
+### Launcher Actions
+
+**File**: `src/main/ipc/launcherIpc.js`
+
+Handles the core launcher operations:
+
+```javascript
+ipcMain.handle('startup-check', async () => {
+  return {
+    javaPath: state.resolvedJavaPath,
+    ok: !!state.resolvedJavaPath,
+  };
+});
+
+ipcMain.handle('fetch-manifest', async () => {
+  try {
+    const manifest = await fetchManifest();
+    // Cache for offline use
+    fs.writeFileSync(
+      path.join(BASE_DIR, 'cache', 'manifest.json'),
+      JSON.stringify(manifest, null, 2)
+    );
+    return { ok: true, manifest };
+  } catch (err) {
+    // Fallback to cached manifest
+    const cachePath = path.join(BASE_DIR, 'cache', 'manifest.json');
+    if (fs.existsSync(cachePath)) {
+      log(`Using cached manifest: ${err.message}`);
+      return { 
+        ok: true, 
+        manifest: JSON.parse(fs.readFileSync(cachePath, 'utf8')),
+        cached: true 
+      };
+    }
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('sync-and-launch', async (_, { config, manifest }) => {
+  // 1. Resolve profile
+  // 2. Check/install Java
+  // 3. Check/install Forge
+  // 4. Sync mods
+  // 5. Spawn Minecraft process
+  // See Services Layer section for details
+});
+```
+
+### Server Ping
+
+**File**: `src/main/ipc/serverIpc.js`
+
+```javascript
+ipcMain.handle('ping-server', async (_, { host, port }) => {
+  return pingMinecraftServer(host, port || 25565);
+});
+```
+
+### Utilities
+
+**File**: `src/main/ipc/utilIpc.js`
+
+```javascript
+ipcMain.handle('open-folder', (_, folderPath) => {
+  shell.openPath(folderPath || BASE_DIR);
+});
+
+ipcMain.handle('open-external', (_, url) => {
+  if (url && url.startsWith('http')) {
+    shell.openExternal(url);
+  }
+});
+
+ipcMain.handle('browse-minecraft-dir', async () => {
+  const result = await dialog.showOpenDialog(state.mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Selecione a pasta do UmuCraft',
+    defaultPath: BASE_DIR,
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('get-system-info', () => {
+  const totalRam = Math.floor(os.totalmem() / 1024 / 1024);
+  return {
+    platform: process.platform,
+    totalRam,
+    launcherDir: BASE_DIR,
+  };
+});
+```
+
+## Services Layer
+
+Pure business logic with no IPC dependencies. Services are called by IPC handlers.
+
+### Mod Sync Service
+
+**File**: `src/main/services/modSyncService.js`
+
+Synchronizes mods from a remote ZIP file:
+
+```javascript
+async function syncMods(manifest, profileDir) {
+  const modsDir = path.join(profileDir, 'mods');
+  fs.mkdirSync(modsDir, { recursive: true });
+
+  const modsVersion = manifest.modsVersion;
+  const modsZipUrl = manifest.modsZipUrl;
+  const modsZipMd5 = manifest.modsZipMd5;
+
+  // Check local version
+  const versionFile = path.join(profileDir, '.mods-version');
+  const localVersion = fs.existsSync(versionFile)
+    ? fs.readFileSync(versionFile, 'utf8').trim()
+    : null;
+
+  if (localVersion === modsVersion) {
+    log(`Mods already up to date (${modsVersion})`);
+    return 0;
+  }
+
+  // Download ZIP to temp directory
+  const tmpDir = path.join(os.tmpdir(), 'umulauncher-mods');
+  const zipPath = path.join(tmpDir, 'mods.zip');
+  await downloadFile(modsZipUrl, zipPath, 'Downloading mods');
+
+  // Verify MD5 checksum
+  if (modsZipMd5) {
+    const hash = fileHash(zipPath);
+    if (hash !== modsZipMd5) {
+      throw new Error(`MD5 mismatch: expected ${modsZipMd5}, got ${hash}`);
+    }
+  }
+
+  // Clear existing mods
+  const existing = fs.readdirSync(modsDir);
+  for (const file of existing) {
+    fs.unlinkSync(path.join(modsDir, file));
+  }
+
+  // Extract new mods
+  await extractZip(zipPath, { dir: modsDir });
+
+  // Save version marker
+  fs.writeFileSync(versionFile, modsVersion);
+
+  return fs.readdirSync(modsDir).filter(f => f.endsWith('.jar')).length;
+}
+```
+
+### Minecraft Launcher Service
+
+**File**: `src/main/services/minecraftLauncher.js`
+
+Handles Java resolution and Minecraft process spawning:
+
+```javascript
+function getRequiredJavaVersion(minecraftVersion) {
+  for (const [prefix, info] of Object.entries(JAVA_VERSIONS)) {
+    if (minecraftVersion.startsWith(prefix)) return info;
+  }
+  return { version: '17', major: 17 };
+}
+
+function resolveJavaForLaunch(majorVersion) {
+  // 1. Use bootstrap-resolved Java path
+  if (state.resolvedJavaPath) {
+    return state.resolvedJavaPath;
+  }
+  
+  // 2. Fallback: detect again
+  const detector = new RuntimeDetector(logger, BASE_DIR);
+  const result = detector.detect();
+  if (result) return result.path;
+  
+  throw new Error(`Java >= ${majorVersion} not found`);
+}
+
+async function launchMinecraft({ javaPath, minecraftDir, ram, username, mcVersion, forgeVersion }) {
+  // 1. Load version JSON (handles Forge inheritsFrom chain)
+  const versionData = loadVersionJson(versionsDir, forgeVersionId);
+  
+  // 2. Download missing libraries
+  await ensureLibraries(versionData.libraries, librariesDir);
+  
+  // 3. Download missing assets
+  await ensureAssets(versionData.assetIndex, assetsDir);
+  
+  // 4. Extract native libraries
+  await extractNatives(versionData.libraries, librariesDir, nativesDir);
+  
+  // 5. Build classpath
+  const classpath = [];
+  for (const lib of versionData.libraries) {
+    if (isAllowed(lib.rules)) {
+      const libPath = resolveLibraryPath(lib, librariesDir);
+      if (libPath && fs.existsSync(libPath)) {
+        classpath.push(libPath);
+      }
+    }
+  }
+  
+  // 6. Build JVM arguments
+  const jvmArgs = [
+    `-Xms512m`,
+    `-Xmx${ram}m`,
+    `-XX:+UseG1GC`,
+    // ... plus args from version JSON
+  ];
+  
+  // 7. Build game arguments
+  const gameArgs = [/* from version JSON */];
+  
+  // 8. Spawn process
+  const child = spawn(javaPath, [...jvmArgs, mainClass, ...gameArgs], {
+    cwd: minecraftDir,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  
+  child.unref();
+  return child.pid;
+}
+```
+
+### Other Services
+
+| Service | File | Purpose |
+|---------|------|--------|
+| **Profile Service** | `profileService.js` | Create default profile, download MC client JAR |
+| **Manifest Service** | `manifestService.js` | Fetch remote manifest.json via HTTP |
+| **Forge Installer** | `forgeInstaller.js` | Install Forge if not present |
+| **Server Ping** | `serverPingService.js` | TCP ping Minecraft server (protocol handshake) |
+
+## Utils Layer
+
+Low-level utilities used by services.
+
+| Utility | File | Exports |
+|---------|------|--------|
+| **Paths** | `paths.js` | `BASE_DIR`, `CONFIG`, `ensureDirectories()` |
+| **IPC Sender** | `ipcSender.js` | `send(event, data)`, `log(message)` |
+| **Download** | `download.js` | `downloadFile(url, dest, label, opts)` |
+| **HTTP** | `http.js` | `httpGetJson(url)` with redirect support |
+| **File Hash** | `fileHash.js` | `fileHash(filePath)` — MD5 |
+
+### Example: Download Utility
+
+**File**: `src/main/utils/download.js`
+
+```javascript
+const { send } = require('./ipcSender');
+const https = require('https');
+const fs = require('fs');
+
+async function downloadFile(url, dest, label, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    https.get(url, (res) => {
+      const total = parseInt(res.headers['content-length'], 10);
+      let downloaded = 0;
+      
+      res.on('data', (chunk) => {
+        downloaded += chunk.length;
+        file.write(chunk);
+        if (!opts.silent) {
+          const pct = Math.round((downloaded / total) * 100);
+          send('download-progress', { label, percent: pct, downloaded, total });
+        }
+      });
+      
+      res.on('end', () => {
+        file.end();
+        resolve();
+      });
+    }).on('error', reject);
+  });
+}
+```
+
+## Bootstrap System
+
+A separate subsystem for Java detection and installation.
+
+### Controller (State Machine)
+
+**File**: `src/main/bootstrap/controller.js`
+
+Orchestrates the detection → installation → validation flow:
+
+```javascript
+class BootstrapController {
+  async run() {
+    // Step 1: Check bundled Java
+    this.setState('checking_bundled');
+    let found = this.detector.detectBundled();
+    
+    // Step 2: Check system Java (PATH, JAVA_HOME)
+    if (!found) {
+      this.setState('checking_system');
+      found = this.detector.detectSystem();
+    }
+    
+    // Step 3: Check common paths (Program Files, etc.)
+    if (!found) {
+      this.setState('checking_common');
+      found = this.detector.detectCommonPaths();
+    }
+    
+    // Step 4: Download & install if not found
+    if (!found) {
+      this.setState('runtime_not_found');
+      this.setState('downloading_runtime');
+      const installResult = await this.installer.install((pct, downloaded, total) => {
+        this.logger.progress({ phase: 'downloading', percent: pct, downloaded, total });
+      });
+      this.setState('validating_runtime');
+      if (!installResult.valid) throw new Error('Validation failed');
+      found = installResult;
+    }
+    
+    this.setState('runtime_found', `Java ${found.version} at ${found.path}`);
+    this.setState('completed');
+    
+    return { ok: true, javaPath: found.path, javaVersion: found.version };
+  }
+}
+```
+
+### Detector
+
+**File**: `src/main/bootstrap/detector.js`
+
+Searches for Java executables in various locations:
+
+- Bundled: `~/.UmuCraft/java/bin/java`
+- System: `PATH` environment variable, `JAVA_HOME`
+- Common paths: `C:\Program Files\Java`, `/usr/lib/jvm`, etc.
+
+### Installer
+
+**File**: `src/main/bootstrap/installer.js`
+
+Downloads Adoptium JDK from official mirror, extracts to `~/.UmuCraft/java/`, validates by running `java -version`.
+
+### Logger
+
+**File**: `src/main/bootstrap/logger.js`
+
+Writes to `~/.UmuCraft/logs/bootstrap.log` and sends IPC events to bootstrap window.
+
+## Next Steps
+
+- [Renderer Process Architecture](/architecture/renderer-process)
+- [IPC Communication](/architecture/ipc-communication)

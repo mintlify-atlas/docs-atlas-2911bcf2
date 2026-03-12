@@ -1,0 +1,290 @@
+---
+title: 'Server Connection'
+description: 'Connecting to servers and using the server ping feature'
+---
+
+## Server List
+
+Umucraft Launcher includes a built-in server list that displays configured servers and their real-time status. The servers tab provides quick access to server information and connection details.
+
+## Configured Servers
+
+Servers are defined in the launcher configuration:
+
+```javascript
+export const SERVERS = [
+  { name: 'Umucraft Modded 2026', host: 'plus-07.bedhosting.com.br', port: 21236 },
+  { name: 'UmuCraft Vanilla', host: 'vanilla.umucraft.com', port: 25565 },
+];
+```
+
+Each server entry contains:
+- **name**: Display name of the server
+- **host**: Server hostname or IP address
+- **port**: Server port (defaults to 25565 if not specified)
+
+## Viewing Server Status
+
+The servers page displays real-time server information through the server ping feature.
+
+### Accessing the Servers Tab
+
+Navigate to the **Servers** tab in the launcher to view the server list. When you open the tab, the launcher automatically displays all configured servers.
+
+### Server Ping Feature
+
+The launcher pings each server to retrieve status information:
+
+```javascript
+export async function refreshServers() {
+  const list = $('servers-list');
+  
+  // Render placeholder cards
+  SERVERS.forEach(srv => {
+    const card = createServerCard(srv, null);
+    list.appendChild(card);
+  });
+
+  // Ping each server
+  for (let i = 0; i < SERVERS.length; i++) {
+    const srv = SERVERS[i];
+    try {
+      const result = await window.launcher.pingServer({ 
+        host: srv.host, 
+        port: srv.port || 25565 
+      });
+      const card = list.children[i];
+      updateServerCard(card, srv, result);
+    } catch {}
+  }
+}
+```
+
+<Info>
+Server cards appear immediately with placeholder information, then update with live ping data as responses arrive.
+</Info>
+
+## Server Ping Process
+
+<Steps>
+  <Step title="Initial Display">
+    When the servers page loads, placeholder cards are created for each configured server.
+    
+    The launcher displays:
+    - Server name
+    - Host and port information
+    - Loading indicator while ping is in progress
+  </Step>
+
+  <Step title="Ping Request">
+    The launcher sends a ping request to each server:
+    
+    ```javascript
+    const result = await window.launcher.pingServer({ 
+      host: srv.host, 
+      port: srv.port || 25565 
+    });
+    ```
+    
+    This queries the Minecraft server for status information.
+  </Step>
+
+  <Step title="Update Display">
+    When ping results arrive, the server card updates with:
+    
+    - Online/offline status
+    - Player count (current/maximum)
+    - Server version information
+    - Server description/MOTD
+    - Latency/ping time
+    
+    ```javascript
+    updateServerCard(card, srv, result);
+    ```
+  </Step>
+
+  <Step title="Handle Failures">
+    If a server doesn't respond:
+    
+    - The ping attempt is caught silently
+    - The card remains in placeholder state or shows offline status
+    - Other servers continue pinging independently
+  </Step>
+</Steps>
+
+## Refreshing Server Status
+
+You can manually refresh server information:
+
+### Using the Refresh Button
+
+Click the **Refresh Servers** button to re-ping all servers:
+
+```javascript
+$('refresh-servers-btn').addEventListener('click', () => refreshServers());
+```
+
+This clears the current server list and performs a fresh ping of all servers.
+
+<Note>
+Refreshing servers will re-query all configured servers for the latest status information.
+</Note>
+
+## Server Card Information
+
+Each server card displays:
+
+### Basic Information
+- **Server Name**: Display name from configuration
+- **Host Address**: Server hostname or IP
+- **Port**: Connection port number
+
+### Live Status (when online)
+- **Player Count**: Current players vs. maximum capacity
+- **Version**: Minecraft server version
+- **Description**: Server MOTD (Message of the Day)
+- **Latency**: Ping time in milliseconds
+
+### Offline Status
+If a server is offline or unreachable:
+- The card indicates the server is not responding
+- No player count or version information is displayed
+- You can refresh to check again
+
+## Connecting to Servers
+
+To connect to a server:
+
+<Steps>
+  <Step title="Launch Minecraft">
+    Start the game using the launcher's launch button on the home page.
+  </Step>
+
+  <Step title="Select Multiplayer">
+    In Minecraft, click **Multiplayer** from the main menu.
+  </Step>
+
+  <Step title="Add Server (if needed)">
+    If the server isn't already in your list:
+    
+    - Click **Add Server**
+    - Enter the server name
+    - Enter the host address and port from the launcher
+    - Click **Done**
+  </Step>
+
+  <Step title="Join Server">
+    Select the server from your list and click **Join Server**.
+  </Step>
+</Steps>
+
+### Server Connection Details
+
+For manual server entry in Minecraft:
+
+**Umucraft Modded 2026**
+```
+Host: plus-07.bedhosting.com.br
+Port: 21236
+```
+
+**UmuCraft Vanilla**
+```
+Host: vanilla.umucraft.com
+Port: 25565
+```
+
+<Note>
+When entering server addresses in Minecraft, use the format `host:port` (e.g., `plus-07.bedhosting.com.br:21236`) or enter them in separate fields if your client supports it.
+</Note>
+
+## Understanding Server Pings
+
+### How Ping Works
+
+The launcher uses the Minecraft Server List Ping protocol:
+
+1. Connects to the server port
+2. Sends a status request packet
+3. Receives server information in JSON format
+4. Displays the parsed data in the server card
+
+### Ping Timing
+
+Servers are pinged:
+- **On page load**: When you navigate to the servers tab
+- **On refresh**: When you click the refresh button
+- **Sequentially**: One server at a time to avoid network congestion
+
+<Info>
+Ping results show real-time server status at the moment of the query. Status may change between pings.
+</Info>
+
+## Empty Server List
+
+If no servers are configured:
+
+```javascript
+if (SERVERS.length === 0) {
+  list.innerHTML = '<div class="empty-state">Nenhum servidor configurado.</div>';
+  return;
+}
+```
+
+The servers tab will display "Nenhum servidor configurado" (No servers configured).
+
+## Troubleshooting Server Connections
+
+### Server Not Responding
+
+If a server shows as offline:
+
+<Steps>
+  <Step title="Check Server Status">
+    Verify the server is actually online by checking with the server administrator or community.
+  </Step>
+  
+  <Step title="Verify Connection">
+    Ensure you have an active internet connection.
+  </Step>
+  
+  <Step title="Refresh Status">
+    Click the **Refresh Servers** button to re-ping the server.
+  </Step>
+  
+  <Step title="Check Firewall">
+    Ensure your firewall isn't blocking the launcher's network requests.
+  </Step>
+</Steps>
+
+### Connection Refused in Game
+
+If you can launch but can't connect in Minecraft:
+
+- **Check mod compatibility**: Ensure your mods match the server requirements
+- **Verify profile**: Make sure you're using the correct profile for the server
+- **Check game version**: Confirm your Minecraft version matches the server
+- **Review server whitelist**: Some servers require whitelist approval
+
+<Warning>
+To connect to modded servers, ensure you've selected the appropriate profile in the launcher before launching. Vanilla Minecraft clients cannot connect to modded servers.
+</Warning>
+
+### Ping Failures
+
+If pings consistently fail:
+
+- **Network issues**: Check your internet connection
+- **Server downtime**: The server may be temporarily offline
+- **Port blocking**: Your ISP or network may block certain ports
+- **DNS issues**: Try using the server's IP address instead of hostname
+
+## Server Information Updates
+
+Server status is not automatically refreshed while the tab is open. To get updated information:
+
+1. Click the **Refresh Servers** button
+2. Navigate away from the servers tab and back
+3. Restart the launcher
+
+This ensures you always have control over when network requests are made.

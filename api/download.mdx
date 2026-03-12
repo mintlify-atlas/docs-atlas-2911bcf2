@@ -1,0 +1,107 @@
+---
+title: 'download.js'
+description: 'File download utility with progress tracking'
+---
+
+## Overview
+
+The `download.js` module provides HTTP/HTTPS file download functionality with built-in progress tracking and redirect handling.
+
+**Source:** `src/main/utils/download.js`
+
+## Functions
+
+### downloadFile()
+
+Downloads a file from a URL to a destination path with progress tracking via IPC events.
+
+```javascript
+function downloadFile(url, destPath, progressLabel, { silent = false } = {})
+```
+
+<ParamField path="url" type="string" required>
+  The URL to download from. Supports both HTTP and HTTPS protocols.
+</ParamField>
+
+<ParamField path="destPath" type="string" required>
+  The local file system path where the downloaded file will be saved.
+</ParamField>
+
+<ParamField path="progressLabel" type="string" required>
+  A label identifier for the download progress events. Used to distinguish multiple concurrent downloads.
+</ParamField>
+
+<ParamField path="options" type="object">
+  Optional configuration object.
+  
+  <ParamField path="silent" type="boolean" default="false">
+    When `true`, suppresses progress events. When `false`, emits `download-progress` IPC events.
+  </ParamField>
+</ParamField>
+
+**Returns:** `Promise<void>` - Resolves when download completes, rejects on error.
+
+#### Behavior
+
+- **Redirect Handling:** Automatically follows HTTP 301, 302, and 303 redirects (`src/main/utils/download.js:15-18`)
+- **Progress Tracking:** Emits `download-progress` events with percentage, downloaded bytes, and total bytes (`src/main/utils/download.js:28-31`)
+- **Protocol Detection:** Automatically selects HTTP or HTTPS based on URL scheme (`src/main/utils/download.js:13`)
+- **Error Handling:** Rejects with descriptive errors for non-200 status codes (`src/main/utils/download.js:19-22`)
+
+#### Progress Events
+
+When `silent` is `false`, the function sends IPC events to the renderer process:
+
+```javascript
+{
+  label: progressLabel,
+  percent: 75,           // 0-100
+  downloaded: 7500000,   // bytes downloaded
+  total: 10000000        // total file size
+}
+```
+
+#### Example Usage
+
+```javascript
+const { downloadFile } = require('./utils/download');
+
+// Download with progress tracking
+await downloadFile(
+  'https://example.com/file.zip',
+  '/path/to/destination/file.zip',
+  'my-download'
+);
+
+// Silent download (no progress events)
+await downloadFile(
+  'https://example.com/file.zip',
+  '/path/to/destination/file.zip',
+  'silent-download',
+  { silent: true }
+);
+```
+
+#### Implementation Details
+
+The download process:
+
+1. Determines protocol (HTTP/HTTPS) from URL (`src/main/utils/download.js:13`)
+2. Handles redirects recursively (`src/main/utils/download.js:15-18`)
+3. Validates HTTP 200 status code (`src/main/utils/download.js:19-22`)
+4. Extracts `Content-Length` header for total size (`src/main/utils/download.js:23`)
+5. Pipes response to file stream (`src/main/utils/download.js:24-25`)
+6. Tracks downloaded bytes and emits progress events (`src/main/utils/download.js:26-32`)
+7. Resolves promise on completion (`src/main/utils/download.js:33`)
+
+## Dependencies
+
+- `fs` - File system operations
+- `https` - HTTPS protocol support
+- `http` - HTTP protocol support
+- `./ipcSender` - IPC communication for progress events
+
+## Related
+
+- [IPC Communication](/api/ipc) - IPC event system
+- [File Hash](/api/file-hash) - File verification utilities

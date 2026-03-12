@@ -1,0 +1,293 @@
+---
+title: 'BootstrapController'
+description: 'Orchestrates the Java runtime bootstrap flow with clear state transitions'
+---
+
+## Overview
+
+The `BootstrapController` class orchestrates the complete Java runtime detection and installation flow. It coordinates between the `RuntimeDetector` and `RuntimeInstaller` to ensure a valid Java 17+ runtime is available.
+
+**Source:** `src/main/bootstrap/controller.js`
+
+## Bootstrap State Machine
+
+The controller implements a state machine with the following transitions:
+
+```
+checking_bundled → runtime_found | checking_system
+checking_system  → runtime_found | checking_common
+checking_common  → runtime_found | runtime_not_found
+runtime_not_found → downloading_runtime
+downloading_runtime → extracting_runtime → validating_runtime → runtime_found
+runtime_found → completed
+(any step) → failed
+```
+
+**Source:** `src/main/bootstrap/controller.js:7-16`
+
+## Constructor
+
+```javascript
+const controller = new BootstrapController(baseDir);
+```
+
+<ParamField path="baseDir" type="string" required>
+  Base directory for UmuCraft data (typically `~/.UmuCraft`). Used for storing logs, Java installations, and cache.
+</ParamField>
+
+**Source:** `src/main/bootstrap/controller.js:18-26`
+
+## Properties
+
+<ResponseField name="baseDir" type="string">
+  Base directory path provided during construction
+</ResponseField>
+
+<ResponseField name="logger" type="BootstrapLogger">
+  Logger instance for state transitions and progress reporting
+</ResponseField>
+
+<ResponseField name="detector" type="RuntimeDetector">
+  Runtime detector instance for finding Java installations
+</ResponseField>
+
+<ResponseField name="installer" type="RuntimeInstaller">
+  Runtime installer instance for downloading Adoptium JDK
+</ResponseField>
+
+<ResponseField name="state" type="string">
+  Current state of the bootstrap process. Possible values:
+  - `idle` - Initial state
+  - `checking_bundled` - Checking bundled Java in `~/.UmuCraft/java/`
+  - `checking_system` - Checking system Java via PATH
+  - `checking_common` - Checking common installation directories
+  - `runtime_not_found` - No compatible runtime found
+  - `downloading_runtime` - Downloading Adoptium JDK 21
+  - `extracting_runtime` - Extracting downloaded archive
+  - `validating_runtime` - Validating installed Java
+  - `runtime_found` - Compatible runtime located
+  - `completed` - Bootstrap completed successfully
+  - `failed` - Bootstrap failed with error
+</ResponseField>
+
+<ResponseField name="result" type="object | null">
+  Result object containing detected/installed runtime information
+</ResponseField>
+
+<ResponseField name="error" type="string | null">
+  Error message if bootstrap failed
+</ResponseField>
+
+## Methods
+
+### setSender()
+
+Configures the Electron WebContents for sending real-time progress updates to the renderer process.
+
+```javascript
+controller.setSender(webContents);
+```
+
+<ParamField path="webContents" type="Electron.WebContents" required>
+  Electron WebContents instance for IPC communication
+</ParamField>
+
+**Events emitted:**
+- `bootstrap-log` - Log messages
+- `bootstrap-state` - State transitions
+- `bootstrap-progress` - Download progress updates
+
+**Source:** `src/main/bootstrap/controller.js:28-30`
+
+---
+
+### setState()
+
+Updates the internal state and emits state change events.
+
+```javascript
+controller.setState(state, detail);
+```
+
+<ParamField path="state" type="string" required>
+  New state identifier
+</ParamField>
+
+<ParamField path="detail" type="string">
+  Optional detail message for this state
+</ParamField>
+
+**Source:** `src/main/bootstrap/controller.js:32-35`
+
+---
+
+### run()
+
+Executes the complete bootstrap flow: detect bundled → detect system → detect common paths → install if needed → validate.
+
+```javascript
+const result = await controller.run();
+```
+
+**Returns:** `Promise<Object>`
+
+<ResponseField name="ok" type="boolean" required>
+  Whether bootstrap succeeded
+</ResponseField>
+
+<ResponseField name="javaPath" type="string">
+  Absolute path to the java executable (only if `ok: true`)
+</ResponseField>
+
+<ResponseField name="javaVersion" type="number">
+  Major Java version (e.g., `17`, `21`) (only if `ok: true`)
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  Source of the runtime (only if `ok: true`):
+  - `bundled` - Found in `~/.UmuCraft/java/`
+  - `system` - Found via PATH
+  - `common` - Found in common installation paths
+  - `installed` - Freshly downloaded and installed
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message (only if `ok: false`)
+</ResponseField>
+
+**Source:** `src/main/bootstrap/controller.js:37-110`
+
+**Example:**
+
+```javascript
+const BootstrapController = require('./bootstrap/controller');
+const { BrowserWindow } = require('electron');
+
+const mainWindow = new BrowserWindow({ /* ... */ });
+const controller = new BootstrapController('/home/user/.UmuCraft');
+
+// Enable progress updates
+controller.setSender(mainWindow.webContents);
+
+// Run bootstrap
+const result = await controller.run();
+
+if (result.ok) {
+  console.log(`Java ${result.javaVersion} found at ${result.javaPath}`);
+  console.log(`Source: ${result.source}`);
+  // Launch Minecraft with result.javaPath
+} else {
+  console.error(`Bootstrap failed: ${result.error}`);
+  console.log(`Log: ${controller.getLogPath()}`);
+}
+```
+
+---
+
+### getLogPath()
+
+Returns the absolute path to the bootstrap log file.
+
+```javascript
+const logPath = controller.getLogPath();
+```
+
+**Returns:** `string`
+
+Absolute path to `~/.UmuCraft/logs/bootstrap.log`
+
+**Source:** `src/main/bootstrap/controller.js:112-114`
+
+## Detection Flow
+
+The `run()` method follows this detection sequence:
+
+### 1. Check Bundled Runtime
+
+```javascript
+this.setState('checking_bundled');
+let found = this.detector.detectBundled();
+```
+
+Searches `~/.UmuCraft/java/` for bundled Java installations.
+
+**Source:** `src/main/bootstrap/controller.js:46-48`
+
+### 2. Check System Runtime
+
+```javascript
+if (!found) {
+  this.setState('checking_system');
+  found = this.detector.detectSystem();
+}
+```
+
+Checks if `java` is available in system PATH and meets version requirements.
+
+**Source:** `src/main/bootstrap/controller.js:51-54`
+
+### 3. Check Common Paths
+
+```javascript
+if (!found) {
+  this.setState('checking_common');
+  found = this.detector.detectCommonPaths();
+}
+```
+
+Scans platform-specific common installation directories:
+- **Windows:** `Program Files\Java`, `Program Files\Eclipse Adoptium`, etc.
+- **Linux:** `/usr/lib/jvm`, `/usr/java`, `/opt/java`, `~/.sdkman`
+- **macOS:** `/Library/Java/JavaVirtualMachines`, `/usr/local/opt/openjdk`
+
+**Source:** `src/main/bootstrap/controller.js:57-60`
+
+### 4. Install if Not Found
+
+```javascript
+if (!found) {
+  this.setState('runtime_not_found');
+  this.logger.log('No compatible Java runtime found. Will download Adoptium JDK 21.');
+  
+  this.setState('downloading_runtime');
+  const installResult = await this.installer.install((pct, downloaded, total) => {
+    this.logger.progress({
+      phase: 'downloading',
+      percent: pct,
+      downloaded,
+      total,
+    });
+  });
+  
+  this.setState('validating_runtime');
+  if (!installResult.valid) {
+    throw new Error('Installed runtime validation failed');
+  }
+}
+```
+
+Downloads and installs Adoptium JDK 21 with progress reporting.
+
+**Source:** `src/main/bootstrap/controller.js:76-92`
+
+## Error Handling
+
+All errors are caught and returned as `{ ok: false, error }` objects. The controller transitions to the `failed` state and logs the error:
+
+```javascript
+try {
+  // ... bootstrap logic
+} catch (err) {
+  this.error = err.message;
+  this.setState('failed', err.message);
+  this.logger.error(err.stack || err.message);
+  return { ok: false, error: err.message };
+}
+```
+
+**Source:** `src/main/bootstrap/controller.js:104-109`
+
+## See Also
+
+- [RuntimeDetector](/api/runtime-detector) - Java detection across platforms
+- [Java Installer](/api/java-installer) - Adoptium JDK download and installation

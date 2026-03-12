@@ -1,0 +1,258 @@
+---
+title: Installation
+description: Install Umucraft Launcher on Windows, Linux, or macOS
+---
+
+Umucraft Launcher is a custom Minecraft launcher built with Electron that provides automatic mod synchronization, Java auto-installation, and seamless profile management for Forge-based servers.
+
+## System Requirements
+
+<CardGroup cols={3}>
+  <Card title="Windows" icon="windows">
+    Windows 10 or later (64-bit)
+  </Card>
+  <Card title="Linux" icon="linux">
+    Modern Linux distribution (64-bit)
+  </Card>
+  <Card title="macOS" icon="apple">
+    macOS 10.15 (Catalina) or later
+  </Card>
+</CardGroup>
+
+<Note>
+  **Java is handled automatically!** The launcher detects and installs Java 17 or 21 automatically based on your Minecraft version. You don't need to install Java manually.
+</Note>
+
+## Download the Installer
+
+Download the appropriate installer for your operating system from your server administrator or the official distribution channel.
+
+<CodeGroup>
+```bash Windows
+# Download the .exe installer
+UmucraftLauncher-Setup-1.0.0.exe
+```
+
+```bash Linux
+# Download the AppImage
+UmucraftLauncher-1.0.0.AppImage
+```
+
+```bash macOS
+# Download the .dmg installer
+UmucraftLauncher-1.0.0.dmg
+```
+</CodeGroup>
+
+## Installation Instructions
+
+<Tabs>
+  <Tab title="Windows">
+    <Steps>
+      <Step title="Run the installer">
+        Double-click the `.exe` file to launch the NSIS installer.
+      </Step>
+      
+      <Step title="Choose installation directory">
+        The installer allows you to customize the installation directory. By default, it installs to `C:\Program Files\Umucraft Launcher`.
+        
+        <Info>
+          The launcher stores game data separately in `%USERPROFILE%\.UmuCraft\` regardless of installation location.
+        </Info>
+      </Step>
+      
+      <Step title="Complete installation">
+        Click **Install** and wait for the process to complete. A desktop shortcut will be created automatically.
+      </Step>
+      
+      <Step title="Launch the application">
+        Click **Finish** to launch Umucraft Launcher immediately, or launch it later from the desktop shortcut.
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="Linux">
+    <Steps>
+      <Step title="Make the AppImage executable">
+        Open a terminal in the download directory and run:
+        
+        ```bash
+        chmod +x UmucraftLauncher-1.0.0.AppImage
+        ```
+      </Step>
+      
+      <Step title="Run the AppImage">
+        Double-click the AppImage file or run it from the terminal:
+        
+        ```bash
+        ./UmucraftLauncher-1.0.0.AppImage
+        ```
+        
+        <Info>
+          AppImages are portable and don't require installation. You can move the file anywhere and run it directly.
+        </Info>
+      </Step>
+      
+      <Step title="Optional: Create a desktop entry">
+        For easier access, you can create a desktop entry or move the AppImage to `~/.local/bin/`:
+        
+        ```bash
+        mkdir -p ~/.local/bin
+        mv UmucraftLauncher-1.0.0.AppImage ~/.local/bin/umucraft-launcher
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="macOS">
+    <Steps>
+      <Step title="Open the DMG file">
+        Double-click the `.dmg` file to mount the disk image.
+      </Step>
+      
+      <Step title="Drag to Applications">
+        Drag the **Umucraft Launcher** icon to your **Applications** folder.
+      </Step>
+      
+      <Step title="Launch the application">
+        Open **Launchpad** or **Finder → Applications** and launch Umucraft Launcher.
+        
+        <Warning>
+          On first launch, macOS may show a security warning. Go to **System Preferences → Security & Privacy** and click **Open Anyway** to allow the application.
+        </Warning>
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## First Launch: Bootstrap Process
+
+When you launch Umucraft Launcher for the first time, you'll see a **bootstrap window** that automatically sets up your environment.
+
+<Steps>
+  <Step title="Java detection">
+    The launcher checks for a compatible Java installation in the following order:
+    
+    1. **Bundled Java** - Checks if Java is bundled with the launcher
+    2. **System Java** - Checks `JAVA_HOME` and system PATH
+    3. **Common paths** - Checks common installation directories
+    
+    The bootstrap window displays real-time status updates:
+    - `checking_bundled` → Checking bundled Java
+    - `checking_system` → Checking system Java
+    - `checking_common` → Checking common installation paths
+  </Step>
+  
+  <Step title="Automatic Java installation">
+    If no compatible Java runtime is found, the launcher automatically downloads and installs **Adoptium JDK**:
+    
+    - **Java 17** for Minecraft 1.17-1.19
+    - **Java 21** for Minecraft 1.20-1.21
+    
+    The bootstrap window shows download progress with percentage and data transferred.
+    
+    <Note>
+      Java is installed to `~/.UmuCraft/java/` and is managed entirely by the launcher. This doesn't interfere with any existing Java installations on your system.
+    </Note>
+  </Step>
+  
+  <Step title="Profile preparation">
+    After Java is validated, the launcher prepares the default Minecraft profile by:
+    
+    - Creating necessary directories (`~/.UmuCraft/versions/`, `~/.UmuCraft/mods/`, etc.)
+    - Downloading the Minecraft client if needed
+    - Setting up the default profile configuration
+  </Step>
+  
+  <Step title="Main window opens">
+    Once bootstrap completes, the bootstrap window closes and the main launcher window opens automatically. You're now ready to play!
+  </Step>
+</Steps>
+
+## Data Directory Structure
+
+All launcher data is stored in your home directory under `.UmuCraft`:
+
+| Directory | Purpose |
+|-----------|---------|
+| `~/.UmuCraft/java/` | Auto-installed Java runtime (Adoptium JDK) |
+| `~/.UmuCraft/versions/` | Minecraft client versions (JARs and version JSONs) |
+| `~/.UmuCraft/mods/` | Synchronized mod files (`.jar` files) |
+| `~/.UmuCraft/modpacks/` | Modpack definitions and metadata |
+| `~/.UmuCraft/libraries/` | Minecraft and Forge libraries |
+| `~/.UmuCraft/assets/` | Minecraft game assets (textures, sounds, etc.) |
+| `~/.UmuCraft/cache/` | Cached manifest files (for offline mode) |
+| `~/.UmuCraft/config/` | Mod configuration files |
+| `~/.UmuCraft/logs/` | Launcher and game logs (including `bootstrap.log`) |
+| `~/.UmuCraft/config.json` | User settings (username, RAM, selected profile) |
+
+<Info>
+  On Windows, `~` refers to `%USERPROFILE%` (typically `C:\Users\YourUsername`).
+</Info>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Bootstrap fails with 'runtime_not_found'">
+    If the automatic Java installation fails:
+    
+    1. Check your internet connection
+    2. Verify you have write permissions to `~/.UmuCraft/java/`
+    3. Check the bootstrap log at `~/.UmuCraft/logs/bootstrap.log`
+    4. Try clicking **Retry** in the bootstrap window
+    
+    If issues persist, manually install Java 17 or 21 from [Adoptium](https://adoptium.net/) and ensure `JAVA_HOME` is set.
+  </Accordion>
+  
+  <Accordion title="Windows Defender blocks the installer">
+    Windows SmartScreen may show a warning for unsigned executables:
+    
+    1. Click **More info**
+    2. Click **Run anyway**
+    
+    This is normal for open-source applications. You can verify the installer's integrity with the MD5 hash provided by your server administrator.
+  </Accordion>
+  
+  <Accordion title="macOS shows 'damaged or can't be opened' error">
+    This occurs when the app isn't signed with an Apple Developer certificate:
+    
+    1. Open **Terminal**
+    2. Run: `xattr -cr /Applications/Umucraft\ Launcher.app`
+    3. Try launching again
+    
+    Alternatively, right-click the app and select **Open**, then click **Open** in the dialog.
+  </Accordion>
+  
+  <Accordion title="Linux: AppImage won't run">
+    Ensure FUSE is installed:
+    
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install fuse libfuse2
+    
+    # Fedora
+    sudo dnf install fuse fuse-libs
+    
+    # Arch Linux
+    sudo pacman -S fuse2
+    ```
+    
+    If FUSE isn't available, extract and run the AppImage:
+    
+    ```bash
+    ./UmucraftLauncher-1.0.0.AppImage --appimage-extract
+    ./squashfs-root/AppRun
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+    Launch your first game in minutes
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Customize RAM, profiles, and settings
+  </Card>
+</CardGroup>

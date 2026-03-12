@@ -1,0 +1,797 @@
+---
+title: Troubleshooting
+description: Solutions to common issues when developing and running Umucraft Launcher
+---
+
+## Development Issues
+
+### Build Failures
+
+#### Missing Dependencies
+
+**Symptom:** Build fails with "Cannot find module" errors
+
+**Solution:**
+
+<Steps>
+  <Step title="Clear node_modules">
+    ```bash
+    rm -rf node_modules package-lock.json
+    ```
+  </Step>
+
+  <Step title="Reinstall dependencies">
+    ```bash
+    npm install
+    ```
+  </Step>
+
+  <Step title="Verify Electron version">
+    Ensure Electron 28 is installed:
+    ```bash
+    npm list electron
+    ```
+  </Step>
+</Steps>
+
+#### Electron Builder Errors
+
+**Symptom:** `electron-builder` fails during packaging
+
+**Causes and Solutions:**
+
+<AccordionGroup>
+  <Accordion title="Icon conversion failed">
+    **Problem:** Missing or invalid icon files
+
+    **Solution:** Ensure all icon files exist with correct dimensions:
+    - `src/assets/icon.ico` - 256x256px
+    - `src/assets/icon.png` - 512x512px  
+    - `src/assets/icon.icns` - 1024x1024px
+
+    Use proper icon conversion tools for each format.
+  </Accordion>
+
+  <Accordion title="Code signing issues">
+    **Problem:** Build fails on macOS due to signing requirements
+
+    **Solution:** Either:
+    1. Provide valid code signing certificate in `package.json`
+    2. Disable signing for local builds:
+    ```json
+    "mac": {
+      "identity": null
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Native module rebuild">
+    **Problem:** Native modules incompatible with Electron
+
+    **Solution:**
+    ```bash
+    npm rebuild
+    ```
+
+    Or reinstall with proper flags:
+    ```bash
+    npm install --force
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Runtime Errors
+
+#### DevTools Not Opening
+
+**Symptom:** Running `npm run dev` but DevTools don't appear
+
+**Solution:** Check the dev flag in your script:
+
+```javascript src/main/windows/mainWindow.js
+if (process.argv.includes('--dev')) {
+  mainWindow.webContents.openDevTools();
+}
+```
+
+Ensure `package.json` has:
+```json
+"scripts": {
+  "dev": "electron . --dev"
+}
+```
+
+#### IPC Communication Failures
+
+**Symptom:** Renderer cannot communicate with main process
+
+**Causes:**
+1. **Preload script not loaded**
+   - Verify `preload.js` path in window creation
+   - Check `contextBridge` is exposing methods correctly
+
+2. **Channel name mismatch**
+   - Ensure IPC channel names match between `ipcMain.handle()` and `ipcRenderer.invoke()`
+
+**Debug Steps:**
+
+<Steps>
+  <Step title="Check preload script">
+    ```javascript src/main/windows/mainWindow.js
+    webPreferences: {
+      preload: path.join(__dirname, '../preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+    ```
+  </Step>
+
+  <Step title="Verify context bridge">
+    ```javascript src/main/preload.js
+    contextBridge.exposeInMainWorld('launcher', {
+      // All exposed methods
+      fetchManifest: () => ipcRenderer.invoke('fetch-manifest'),
+      // ...
+    });
+    ```
+  </Step>
+
+  <Step title="Check renderer usage">
+    ```javascript
+    // Correct
+    const manifest = await window.launcher.fetchManifest();
+
+    // Wrong - will fail
+    const manifest = await window.launcher.fetch_manifest();
+    ```
+  </Step>
+</Steps>
+
+## Java Bootstrap Issues
+
+### Java Not Detected
+
+**Symptom:** Bootstrap says "Java not found" despite Java being installed
+
+**Diagnosis:**
+
+The launcher searches in this order:
+1. Bundled runtime (`~/.UmuCraft/java/`)
+2. System PATH (`java -version`)
+3. Common installation paths
+
+**Solution:**
+
+<Tabs>
+  <Tab title="Windows">
+    Check these directories are scanned:
+    - `C:\Program Files\Java`
+    - `C:\Program Files\Eclipse Adoptium`
+    - `C:\Program Files\AdoptOpenJDK`
+    - `C:\Program Files\Zulu`
+    - `C:\Program Files\Microsoft`
+    - `C:\Program Files\Amazon Corretto`
+
+    Ensure Java executable is at: `[InstallDir]\bin\java.exe`
+  </Tab>
+
+  <Tab title="Linux">
+    Check these directories are scanned:
+    - `/usr/lib/jvm`
+    - `/usr/java`
+    - `/opt/java`
+    - `~/.sdkman/candidates/java`
+
+    Ensure Java executable is at: `[InstallDir]/bin/java`
+  </Tab>
+
+  <Tab title="macOS">
+    Check these directories are scanned:
+    - `/Library/Java/JavaVirtualMachines`
+    - `/usr/local/opt/openjdk`
+    - `~/.sdkman/candidates/java`
+  </Tab>
+</Tabs>
+
+**Debugging:**
+
+Check bootstrap logs at:
+```
+~/.UmuCraft/logs/bootstrap.log
+```
+
+Look for detection attempts:
+```
+--- Checking bundled runtime ---
+--- Checking system Java via PATH ---
+--- Checking common installation paths ---
+```
+
+### Java Version Too Old
+
+**Symptom:** Bootstrap detects Java 8/11 but fails validation
+
+**Cause:** Minecraft 1.17+ requires Java 17 or higher
+
+**Solution:**
+
+<Steps>
+  <Step title="Check required version">
+    The launcher determines required Java version from Minecraft version:
+
+    ```javascript src/main/utils/paths.js
+    const JAVA_VERSIONS = {
+      '1.17': { version: '17', major: 17 },
+      '1.18': { version: '17', major: 17 },
+      '1.19': { version: '17', major: 17 },
+      '1.20': { version: '21', major: 21 },
+      '1.21': { version: '21', major: 21 },
+    };
+    ```
+  </Step>
+
+  <Step title="Let launcher install Java">
+    The launcher automatically downloads Java from Eclipse Adoptium if needed.
+    
+    Wait for the download to complete (300-500MB).
+  </Step>
+
+  <Step title="Manual installation (if needed)">
+    Download Java manually:
+    - [Adoptium JDK 21](https://adoptium.net/temurin/releases/?version=21)
+    - [Adoptium JDK 17](https://adoptium.net/temurin/releases/?version=17)
+
+    Install and restart the launcher.
+  </Step>
+</Steps>
+
+### Java Download Fails
+
+**Symptom:** Bootstrap gets stuck on "Downloading Java..."
+
+**Causes:**
+1. Network connectivity issues
+2. Firewall blocking download
+3. Insufficient disk space
+
+**Solution:**
+
+<Steps>
+  <Step title="Check network connectivity">
+    Test access to Adoptium API:
+    ```bash
+    curl https://api.adoptium.net/v3/assets/latest/21/hotspot
+    ```
+  </Step>
+
+  <Step title="Check disk space">
+    Java installation requires ~500MB:
+    
+    <CodeGroup>
+    ```bash Windows
+    dir %USERPROFILE%\.UmuCraft
+    ```
+
+    ```bash Linux/macOS  
+    df -h ~/.UmuCraft
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Retry installation">
+    Click the "Retry" button in the bootstrap window, or restart the launcher.
+  </Step>
+
+  <Step title="Check bootstrap logs">
+    View detailed error messages:
+    ```
+    ~/.UmuCraft/logs/bootstrap.log
+    ```
+  </Step>
+</Steps>
+
+## Network Issues
+
+### Manifest Download Fails
+
+**Symptom:** "Failed to fetch manifest" error on launch
+
+**Diagnosis:**
+
+<Steps>
+  <Step title="Verify manifest URL">
+    Check the URL in `src/main/utils/paths.js`:
+
+    ```javascript
+    const CONFIG = {
+      MANIFEST_URL: 'https://your-url.com/manifest.json',
+      // ...
+    };
+    ```
+  </Step>
+
+  <Step title="Test URL accessibility">
+    ```bash
+    curl -I https://your-url.com/manifest.json
+    ```
+
+    Should return `HTTP/1.1 200 OK`
+  </Step>
+
+  <Step title="Check Dropbox links">
+    If using Dropbox, ensure `?dl=1` (not `?dl=0`):
+    ```
+    https://www.dropbox.com/scl/fi/.../manifest.json?rlkey=...&dl=1
+                                                                  ^
+    ```
+  </Step>
+
+  <Step title="Verify JSON format">
+    Test manifest validity:
+    ```bash
+    curl https://your-url.com/manifest.json | jq .
+    ```
+  </Step>
+</Steps>
+
+**Fallback Behavior:**
+
+The launcher caches manifests in `~/.UmuCraft/cache/manifest.json` for offline use.
+
+### Mod Download Fails
+
+**Symptom:** "Failed to download mod pack" during sync
+
+**Causes:**
+
+<AccordionGroup>
+  <Accordion title="Invalid mod pack URL">
+    **Problem:** `modsZipUrl` in manifest is incorrect or inaccessible
+
+    **Solution:** Verify the URL works:
+    ```bash
+    curl -I [modsZipUrl]
+    ```
+
+    For Dropbox links, ensure `?dl=1` at the end.
+  </Accordion>
+
+  <Accordion title="MD5 hash mismatch">
+    **Problem:** Downloaded zip doesn't match `modsZipMd5` hash
+
+    **Cause:** Manifest hash is outdated or file corrupted during upload
+
+    **Solution:** Regenerate manifest with correct hash:
+    ```bash
+    node scripts/generate-manifest.js ./mods.zip "[URL]" ./manifest.json
+    ```
+  </Accordion>
+
+  <Accordion title="Network timeout">
+    **Problem:** Large mod packs timeout during download
+
+    **Solution:** The launcher shows download progress. Large packs (>500MB) may take several minutes.
+
+    Increase timeout in `src/main/utils/download.js` if needed:
+    ```javascript
+    const response = await axios.get(url, {
+      timeout: 300000, // 5 minutes
+      // ...
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Insufficient disk space">
+    **Problem:** Not enough space to extract mods
+
+    **Solution:** Mods are extracted to `~/.UmuCraft/mods/`. Ensure sufficient free space (typically 1-2GB for large mod packs).
+  </Accordion>
+</AccordionGroup>
+
+### Server Ping Timeout
+
+**Symptom:** All servers show as offline in Servers tab
+
+**Causes:**
+1. Servers are actually offline
+2. Firewall blocking outgoing connections
+3. Incorrect host/port in configuration
+
+**Solution:**
+
+<Steps>
+  <Step title="Verify server configuration">
+    Check `src/renderer/data/servers.js`:
+
+    ```javascript
+    export const SERVERS = [
+      { name: 'Server', host: 'mc.example.com', port: 25565 },
+      //                       ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^
+      //                       Must be correct
+    ];
+    ```
+  </Step>
+
+  <Step title="Test connectivity manually">
+    Use an external tool like [mcsrvstat.us](https://mcsrvstat.us) to verify server is online:
+    ```
+    https://api.mcsrvstat.us/2/mc.example.com:25565
+    ```
+  </Step>
+
+  <Step title="Check firewall rules">
+    Ensure the launcher can make TCP connections on Minecraft ports (25565, etc.).
+  </Step>
+</Steps>
+
+## Game Launch Issues
+
+### Minecraft Won't Start
+
+**Symptom:** Click "JOGAR" but nothing happens
+
+**Diagnosis:**
+
+<Steps>
+  <Step title="Check console logs">
+    Run in dev mode to see errors:
+    ```bash
+    npm run dev
+    ```
+
+    Look for errors in DevTools console.
+  </Step>
+
+  <Step title="Verify profile exists">
+    The launcher creates a default profile. Check:
+    ```
+    ~/.UmuCraft/versions/1.21.4/
+    ```
+
+    Should contain:
+    - `1.21.4.jar` (Minecraft client)
+    - `1.21.4.json` (version manifest)
+  </Step>
+
+  <Step title="Check Java path">
+    Ensure Java was resolved:
+
+    Look for log line:
+    ```
+    Using bootstrap-resolved Java: /path/to/java
+    ```
+  </Step>
+</Steps>
+
+### "Java Not Found" at Launch
+
+**Symptom:** Bootstrap succeeded but launch fails with Java error
+
+**Cause:** Java path not persisted from bootstrap to launcher
+
+**Solution:**
+
+The launcher stores resolved Java path in `state.resolvedJavaPath`. If this fails:
+
+```javascript src/main/services/minecraftLauncher.js
+function resolveJavaForLaunch(majorVersion) {
+  if (state.resolvedJavaPath) {
+    return state.resolvedJavaPath;
+  }
+  // Fallback detection
+  const detector = new RuntimeDetector(logger, BASE_DIR);
+  const result = detector.detect();
+  if (result) return result.path;
+  
+  throw new Error(`Java >= ${majorVersion} not found`);
+}
+```
+
+**Workaround:** Restart the launcher to re-run bootstrap.
+
+### Forge Loading Errors
+
+**Symptom:** Minecraft starts but crashes during Forge initialization
+
+**Common Errors:**
+
+<AccordionGroup>
+  <Accordion title="Duplicate module error">
+    **Error:** `Module X is already defined`
+
+    **Cause:** Main client jar added to classpath twice
+
+    **Solution:** The launcher detects modular Forge (BootstrapLauncher) and excludes the client jar automatically:
+
+    ```javascript src/main/services/minecraftLauncher.js
+    const isModular = versionData.mainClass === 'cpw.mods.bootstraplauncher.BootstrapLauncher';
+    if (!isModular) {
+      const mainJar = path.join(versionsDir, mcVersion, `${mcVersion}.jar`);
+      if (fs.existsSync(mainJar)) classpath.push(mainJar);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Missing libraries">
+    **Error:** `ClassNotFoundException` or `NoClassDefFoundError`
+
+    **Cause:** Forge libraries not downloaded
+
+    **Solution:** The launcher downloads missing libraries automatically. Check:
+    ```
+    ~/.UmuCraft/libraries/
+    ```
+
+    Should contain all dependencies from version JSON.
+  </Accordion>
+
+  <Accordion title="Incompatible mods">
+    **Error:** Forge crashes with mod dependency errors
+
+    **Cause:** Mods incompatible with Forge version or other mods
+
+    **Solution:** 
+    1. Check Forge logs at `~/.UmuCraft/logs/`
+    2. Remove incompatible mods from mod pack
+    3. Regenerate manifest with updated mods
+  </Accordion>
+</AccordionGroup>
+
+### Low FPS / Performance Issues
+
+**Symptom:** Game runs slowly
+
+**Solutions:**
+
+<Steps>
+  <Step title="Increase RAM allocation">
+    Adjust in Settings tab:
+    - Minimum: 2GB (2048MB)
+    - Recommended: 4GB (4096MB)  
+    - Heavy mod packs: 6-8GB
+
+    The launcher passes RAM to JVM:
+    ```javascript
+    const jvmArgs = [
+      `-Xms512m`,
+      `-Xmx${ramMb}m`,
+      `-XX:+UseG1GC`,
+      // ...
+    ];
+    ```
+  </Step>
+
+  <Step title="Check Java version">
+    Ensure correct Java version for Minecraft version:
+    - 1.17-1.19: Java 17
+    - 1.20-1.21: Java 21
+  </Step>
+
+  <Step title="Optimize JVM arguments">
+    The launcher uses G1GC by default:
+    ```javascript
+    `-XX:+UseG1GC`
+    `-XX:+ParallelRefProcEnabled`
+    `-XX:MaxGCPauseMillis=200`
+    ```
+
+    For low-end systems, consider adjusting in `minecraftLauncher.js`.
+  </Step>
+</Steps>
+
+## Mod Sync Issues
+
+### Mods Not Syncing
+
+**Symptom:** Game launches but mods are old/missing
+
+**Diagnosis:**
+
+<Steps>
+  <Step title="Check mod version file">
+    ```bash
+    cat ~/.UmuCraft/.mods-version
+    ```
+
+    Should match `modsVersion` in manifest.
+  </Step>
+
+  <Step title="Force resync">
+    Delete version file to trigger re-download:
+    
+    <CodeGroup>
+    ```bash Windows
+    del %USERPROFILE%\.UmuCraft\.mods-version
+    ```
+
+    ```bash Linux/macOS
+    rm ~/.UmuCraft/.mods-version
+    ```
+    </CodeGroup>
+
+    Relaunch the game.
+  </Step>
+
+  <Step title="Check manifest updates">
+    Ensure manifest JSON has new version:
+    ```json
+    {
+      "profiles": {
+        "Default": {
+          "modsVersion": "1.0.1",  // Must be different
+          // ...
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+### Extraction Fails
+
+**Symptom:** Mod download succeeds but extraction fails
+
+**Causes:**
+1. **Corrupted zip file**
+   - Verify MD5 hash
+   - Re-upload mod pack
+
+2. **Permission denied**
+   - Check write permissions on `~/.UmuCraft/mods/`
+   - Run launcher without admin rights (admin can cause permission issues)
+
+3. **Antivirus blocking**
+   - Some antivirus software blocks zip extraction
+   - Add `~/.UmuCraft/` to exclusions
+
+**Solution:**
+
+```javascript src/main/services/modSyncService.js
+// The launcher extracts with extract-zip
+await extractZip(zipPath, { dir: modsDir });
+```
+
+Check logs for specific extraction errors.
+
+## Configuration Issues
+
+### Settings Not Persisting
+
+**Symptom:** Settings revert after restart
+
+**Cause:** `config.json` not being saved
+
+**Solution:**
+
+<Steps>
+  <Step title="Check config file location">
+    ```
+    ~/.UmuCraft/config.json
+    ```
+  </Step>
+
+  <Step title="Verify write permissions">
+    Ensure launcher can write to data directory:
+    
+    <CodeGroup>
+    ```bash Windows
+    icacls %USERPROFILE%\.UmuCraft
+    ```
+
+    ```bash Linux/macOS
+    ls -la ~/.UmuCraft/config.json
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Check for JSON errors">
+    View config file:
+    ```bash
+    cat ~/.UmuCraft/config.json
+    ```
+
+    Should be valid JSON:
+    ```json
+    {
+      "username": "Player",
+      "ram": "4096",
+      "gameDirectory": "/home/user/.UmuCraft",
+      "javaPath": "",
+      "selectedProfile": "Default"
+    }
+    ```
+  </Step>
+</Steps>
+
+### Username Not Saving
+
+**Symptom:** Username field empty on restart
+
+**Solution:**
+
+The username is saved when launching the game:
+
+```javascript src/renderer/pages/homePage.js
+// Username saved during launch
+const username = usernameInput.value.trim();
+```
+
+Ensure you enter a username before clicking "JOGAR" at least once.
+
+## Data Recovery
+
+### Reset Launcher Data
+
+To completely reset the launcher:
+
+<CodeGroup>
+```bash Windows
+rmdir /s /q %USERPROFILE%\.UmuCraft
+```
+
+```bash Linux/macOS
+rm -rf ~/.UmuCraft
+```
+</CodeGroup>
+
+This removes:
+- All configuration
+- Downloaded Java
+- Cached mods
+- Minecraft assets
+- Logs
+
+<Warning>
+  This does NOT remove Minecraft saves. Those are in the Minecraft directory (separate from launcher data).
+</Warning>
+
+### Backup Important Data
+
+Before major updates, backup:
+
+```bash
+cp -r ~/.UmuCraft/config.json ~/config-backup.json
+cp -r ~/.UmuCraft/saves/ ~/minecraft-saves-backup/
+```
+
+## Getting Help
+
+If issues persist:
+
+<Steps>
+  <Step title="Collect logs">
+    Gather relevant log files:
+    - `~/.UmuCraft/logs/bootstrap.log`
+    - Dev console output (F12 in dev mode)
+    - Minecraft crash logs (if applicable)
+  </Step>
+
+  <Step title="Check manifest validity">
+    Verify your manifest JSON is accessible and valid:
+    ```bash
+    curl -s [MANIFEST_URL] | jq .
+    ```
+  </Step>
+
+  <Step title="Test on fresh install">
+    Try on a system without previous launcher installations to rule out cached data issues.
+  </Step>
+
+  <Step title="Review source code">
+    The launcher is open source. Check:
+    - `src/main/services/` for business logic
+    - `src/main/bootstrap/` for Java detection
+    - `src/renderer/` for UI issues
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Building" icon="hammer" href="/development/building">
+    Learn how to build the launcher from source
+  </Card>
+  <Card title="Customization" icon="palette" href="/development/customization">
+    Customize the launcher for your server
+  </Card>
+</CardGroup>

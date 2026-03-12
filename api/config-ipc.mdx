@@ -1,0 +1,211 @@
+---
+title: 'Config IPC Handlers'
+description: 'Configuration persistence: loading and saving launcher settings'
+---
+
+## Overview
+
+The Config IPC module (`src/main/ipc/configIpc.js`) manages user configuration persistence. It reads and writes the `config.json` file stored in the launcher's base directory.
+
+## Configuration Structure
+
+The configuration object contains:
+
+- `username` - Minecraft username for offline mode
+- `ram` - RAM allocation in MB
+- `selectedProfile` - Active modpack profile
+- `minecraftDir` - Minecraft installation directory
+- `profiles` - Array of custom profiles
+
+## Handlers
+
+### load-config
+
+Loads the launcher configuration from disk. Returns default values if config file doesn't exist.
+
+<ParamField path="Returns" type="object">
+  <Expandable title="properties">
+    <ParamField path="username" type="string">
+      Player username (default: empty string)
+    </ParamField>
+    <ParamField path="ram" type="number">
+      RAM allocation in MB (default: 4096)
+    </ParamField>
+    <ParamField path="selectedProfile" type="string">
+      Active profile name (default: CONFIG.DEFAULT_PROFILE)
+    </ParamField>
+    <ParamField path="minecraftDir" type="string">
+      Minecraft directory path (default: BASE_DIR)
+    </ParamField>
+    <ParamField path="profiles" type="array">
+      Array of custom profile objects (default: [])
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example
+
+```javascript
+// Renderer process
+const config = await window.launcher.loadConfig();
+
+console.log('Username:', config.username);
+console.log('RAM:', config.ram, 'MB');
+console.log('Profile:', config.selectedProfile);
+console.log('Minecraft Dir:', config.minecraftDir);
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/configIpc.js:8-20
+ipcMain.handle('load-config', () => {
+  const configPath = path.join(BASE_DIR, 'config.json');
+  if (fs.existsSync(configPath)) {
+    try { return JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch {}
+  }
+  return {
+    username: '',
+    ram: 4096,
+    selectedProfile: CONFIG.DEFAULT_PROFILE,
+    minecraftDir: BASE_DIR,
+    profiles: [],
+  };
+});
+```
+
+---
+
+### save-config
+
+Saves the launcher configuration to disk. Writes to `config.json` in the launcher's base directory.
+
+<ParamField path="config" type="object" required>
+  The complete configuration object to save
+  <Expandable title="properties">
+    <ParamField path="username" type="string">
+      Player username
+    </ParamField>
+    <ParamField path="ram" type="number">
+      RAM allocation in MB
+    </ParamField>
+    <ParamField path="selectedProfile" type="string">
+      Active profile name
+    </ParamField>
+    <ParamField path="minecraftDir" type="string">
+      Minecraft directory path
+    </ParamField>
+    <ParamField path="profiles" type="array">
+      Array of custom profile objects
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="Returns" type="boolean">
+  Always returns `true` on success
+</ParamField>
+
+#### Example
+
+```javascript
+// Renderer process
+const config = await window.launcher.loadConfig();
+
+// Modify configuration
+config.username = 'Steve';
+config.ram = 8192;
+config.selectedProfile = 'modpack-v2';
+
+// Save changes
+const success = await window.launcher.saveConfig(config);
+
+if (success) {
+  console.log('Configuration saved successfully');
+}
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/configIpc.js:22-26
+ipcMain.handle('save-config', (_, config) => {
+  const configPath = path.join(BASE_DIR, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+  return true;
+});
+```
+
+## File Location
+
+The configuration file is stored at:
+
+```
+{BASE_DIR}/config.json
+```
+
+Where `BASE_DIR` is typically:
+- **Windows**: `%APPDATA%/umucraft-launcher`
+- **macOS**: `~/Library/Application Support/umucraft-launcher`
+- **Linux**: `~/.config/umucraft-launcher`
+
+## Configuration Flow
+
+Typical configuration workflow:
+
+1. **Load** - Read existing config or get defaults
+2. **Modify** - User changes settings in UI
+3. **Save** - Write updated config to disk
+4. **Apply** - Use config during launch operations
+
+```javascript
+// Complete configuration flow example
+async function updateSettings(updates) {
+  // Load current config
+  const config = await window.launcher.loadConfig();
+  
+  // Apply updates
+  Object.assign(config, updates);
+  
+  // Save to disk
+  await window.launcher.saveConfig(config);
+  
+  return config;
+}
+
+// Usage
+await updateSettings({
+  username: 'Alex',
+  ram: 6144
+});
+```
+
+## Default Values
+
+If no configuration file exists, these defaults are returned:
+
+| Field | Default Value |
+|-------|---------------|
+| `username` | `''` (empty string) |
+| `ram` | `4096` (4 GB) |
+| `selectedProfile` | `CONFIG.DEFAULT_PROFILE` |
+| `minecraftDir` | `BASE_DIR` |
+| `profiles` | `[]` (empty array) |
+
+## Error Handling
+
+The `load-config` handler gracefully handles errors:
+
+- If the config file doesn't exist, returns default values
+- If JSON parsing fails, returns default values
+- Never throws errors to the renderer
+
+The `save-config` handler will throw if:
+
+- Disk is full
+- No write permissions
+- Invalid file path
+
+## Related Handlers
+
+- [get-system-info](/api/util-ipc#get-system-info) - Get system RAM for RAM slider limits
+- [browse-minecraft-dir](/api/util-ipc#browse-minecraft-dir) - Select custom Minecraft directory

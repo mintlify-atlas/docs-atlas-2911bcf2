@@ -1,80 +1,293 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Launch your first game with Umucraft Launcher in under 5 minutes
 ---
 
-## Get started in three steps
+This guide will get you from installation to launching Minecraft in just a few steps. The launcher handles all the complexity for you.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+<Check>
+  **Umucraft Launcher installed** - Follow the [installation guide](/installation) if you haven't already.
+</Check>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Warning>
+  **Forge must be installed separately** - The launcher syncs mods but doesn't install Forge. Download and run the Forge installer for your Minecraft version from [files.minecraftforge.net](https://files.minecraftforge.net/) before proceeding.
+</Warning>
+
+## Launch Your First Game
+
+<Steps>
+  <Step title="Open the launcher">
+    Launch Umucraft Launcher from your applications menu or desktop shortcut.
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    If this is your first time opening the launcher, the **bootstrap window** will appear and automatically:
+    - Detect or install Java (17 for MC 1.17-1.19, or 21 for MC 1.20+)
+    - Download the Minecraft client
+    - Prepare your default profile
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    <Info>
+      The bootstrap process typically takes 1-3 minutes depending on your internet connection. You only need to do this once.
+    </Info>
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
+    Once complete, the main launcher window opens with a modern sidebar interface showing 6 tabs: **Home**, **Mods**, **Servers**, **Dicas**, **Discord**, and **Configurações**.
+  </Step>
+  
+  <Step title="Enter your username">
+    On the **Home** tab, find the username input field and enter your Minecraft username.
+    
+    ```text
+    Username rules:
+    - Only letters, numbers, and underscores
+    - No spaces or special characters
+    - 3-16 characters recommended
+    ```
+    
+    <Note>
+      The launcher uses **offline authentication** by default, so you can use any username. Your server must have `online-mode=false` in `server.properties` to accept offline players.
+    </Note>
+  </Step>
+  
+  <Step title="Select your profile">
+    Choose a profile from the dropdown menu at the top of the Home tab.
+    
+    The profile determines:
+    - **Minecraft version** (e.g., 1.20.1)
+    - **Forge version** (e.g., 47.2.0)
+    - **Modpack version** (synced automatically)
+    
+    When you select a profile, the launcher displays version badges showing the current Minecraft and mods versions.
+    
+    <Info>
+      The default profile is named **"Default"** and is configured by your server administrator. Additional profiles may be available for different modpacks or Minecraft versions.
+    </Info>
+  </Step>
+  
+  <Step title="Click JOGAR to launch">
+    Click the large **JOGAR** (Play) button to start the game.
+    
+    The launcher will now:
+    
+    1. **Verify Java** - Ensures the correct Java version is available
+    2. **Check Forge** - Validates Forge installation for the selected version
+    3. **Sync mods** - Downloads and updates mods automatically (this is the magic!)
+    4. **Launch Minecraft** - Starts the game with all configured settings
+    
+    <Tip>
+      Watch the progress panel at the bottom of the window for real-time status updates and progress bars.
+    </Tip>
+  </Step>
+  
+  <Step title="Wait for mod synchronization">
+    The first launch downloads all required mods as a single ZIP file:
+    
+    ```
+    Progress phases:
+    1. Downloading mod package... (shows download progress)
+    2. Verifying integrity... (MD5 hash check)
+    3. Clearing mods folder... (removes outdated mods)
+    4. Extracting mods... (unpacks new mods)
+    5. Mods updated! (complete)
+    ```
+    
+    The log console shows detailed messages like:
+    ```
+    Atualizando mods: nenhuma -> 1.0.0
+    MD5 verificado com sucesso
+    Pasta mods limpa (0 itens removidos)
+    Mods atualizados para versão 1.0.0 (47 mods extraídos)
+    ```
+    
+    <Note>
+      **Subsequent launches are instant** - The launcher only downloads mods when the server updates them. If your mods are already up-to-date, this step is skipped immediately.
+    </Note>
+  </Step>
+  
+  <Step title="Minecraft launches">
+    Once mod sync completes, Minecraft launches automatically with:
+    
+    - **Your username** pre-configured
+    - **Correct Java version** (17 or 21 based on MC version)
+    - **Allocated RAM** (default 4GB, configurable in Settings)
+    - **All synced mods** loaded via Forge
+    
+    The launcher button changes to **"EM JOGO"** and you'll see:
+    ```
+    Minecraft iniciado com sucesso! PID: 12345
+    ```
+    
+    You can now minimize the launcher and play!
+  </Step>
+</Steps>
+
+## Understanding Automatic Mod Sync
+
+Umucraft Launcher's killer feature is **zero-effort mod management**. Here's how it works:
+
+<Accordion title="How mod synchronization works" icon="sync">
+  1. **Server admin updates mods** - Creates a new mod package and updates the manifest
+  2. **You launch the game** - Launcher fetches the latest manifest automatically
+  3. **Version check** - Compares local mod version with server version
+  4. **Automatic download** - Downloads new mod package only if outdated
+  5. **MD5 verification** - Ensures file integrity with hash check
+  6. **Clean install** - Removes old mods and extracts new ones
+  7. **You're in sync** - Everyone on the server has identical mods
 </Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="First Launch" icon="download">
+    Downloads full mod package
+    
+    **Time:** 1-5 minutes
+  </Card>
+  <Card title="Up-to-date Launch" icon="check">
+    Skips download entirely
+    
+    **Time:** ~5 seconds
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## What's Synced vs What's Not
+
+| ✅ Automatically Synced | ❌ Not Synced |
+|------------------------|---------------|
+| Mod JAR files (.jar) | Forge installation |
+| Modpack version | Minecraft client base game |
+| Mod configurations (in some setups) | Resource packs |
+| Server mod list | Shaders |
+| | World saves |
+| | User settings (options.txt) |
+
+<Info>
+  The launcher syncs **client-side mods** from the server's modpack. Server-side-only mods don't need to be synced.
+</Info>
+
+## Quick Tips for New Users
+
+<CardGroup cols={2}>
+  <Card title="Adjust RAM allocation" icon="memory">
+    Go to **Configurações** → RAM slider
+    
+    Recommended: 4-8GB for modded MC
+  </Card>
+  
+  <Card title="Check server status" icon="server">
+    Visit the **Servers** tab to see online servers and ping
+  </Card>
+  
+  <Card title="View installed mods" icon="cube">
+    The **Mods** tab shows all synced mods grouped by modpack
+  </Card>
+  
+  <Card title="Join Discord" icon="discord">
+    Click the **Discord** tab for community support and updates
+  </Card>
+</CardGroup>
+
+## Common First-Launch Issues
+
+<AccordionGroup>
+  <Accordion title="Forge not detected" icon="triangle-exclamation">
+    **Error:** `Verificando Forge 47.2.0... Forge not installed`
+    
+    **Solution:** Install Forge manually before using the launcher:
+    
+    <Steps>
+      <Step title="Download Forge installer">
+        Visit [files.minecraftforge.net](https://files.minecraftforge.net/) and download the installer for your Minecraft version (e.g., 1.20.1 → Forge 47.2.0).
+      </Step>
+      
+      <Step title="Run the Forge installer">
+        Double-click the installer JAR and select **"Install client"**. Make sure it installs to the same directory as your Minecraft installation.
+      </Step>
+      
+      <Step title="Verify installation">
+        Launch the Minecraft launcher (official) once to ensure Forge appears in the version selector.
+      </Step>
+      
+      <Step title="Return to Umucraft Launcher">
+        Forge is now installed and will be detected automatically.
+      </Step>
+    </Steps>
+  </Accordion>
+  
+  <Accordion title="Username field is empty" icon="user">
+    **Issue:** Clicking JOGAR does nothing and the username field turns red
+    
+    **Solution:** Enter a valid username before launching. The field only accepts:
+    - Letters (a-z, A-Z)
+    - Numbers (0-9)
+    - Underscores (_)
+    
+    Invalid characters are automatically removed as you type.
+  </Accordion>
+  
+  <Accordion title="Manifest not loaded" icon="file-xmark">
+    **Error:** `Manifesto nao carregado. Verifique sua conexao e tente novamente.`
+    
+    **Solution:**
+    1. Check your internet connection
+    2. Click the **refresh icon** next to the profile selector to retry
+    3. If the server is down, the launcher will use a cached manifest (if available)
+    
+    <Note>
+      The launcher caches the last successful manifest in `~/.UmuCraft/cache/manifest.json` for offline play.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="Mods not syncing" icon="download">
+    **Error:** Download or extraction fails during mod sync
+    
+    **Solution:**
+    1. Check that you have write permissions to `~/.UmuCraft/mods/`
+    2. Ensure sufficient disk space (mod packages can be 100-500MB)
+    3. Verify your internet connection is stable
+    4. Check the log console for detailed error messages
+    5. Try launching again - the launcher will retry the download
+  </Accordion>
+  
+  <Accordion title="Java version mismatch" icon="mug-hot">
+    **Error:** Game crashes with Java-related errors after launch
+    
+    **Solution:** The launcher should handle this automatically, but if issues occur:
+    
+    - **MC 1.17-1.19** requires Java 17
+    - **MC 1.20-1.21** requires Java 21
+    
+    Check **Configurações** → System Info to see the detected Java version. If incorrect, the bootstrap process may have failed - try reinstalling the launcher.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configure Settings" icon="sliders" href="/configuration">
+    Adjust RAM, change directories, and customize your experience
+  </Card>
+  
+  <Card title="Browse Mods" icon="puzzle-piece" href="/mods">
+    View all installed mods and their versions
+  </Card>
+  
+  <Card title="Check Servers" icon="server" href="/servers">
+    Find and connect to available game servers
+  </Card>
+  
+  <Card title="Join Community" icon="users" href="/community">
+    Get support and connect with other players
+  </Card>
+</CardGroup>
+
+## Pro Tips
+
+<Tip>
+  **Use profiles for different modpacks** - Server admins can create multiple profiles for different game modes (e.g., "Survival 1.20", "Skyblock 1.19"). Switch between them instantly from the dropdown.
+</Tip>
+
+<Tip>
+  **Keep the launcher open** - While playing, keep the launcher minimized. It displays useful status information and logs game output.
+</Tip>
+
+<Tip>
+  **Check for updates regularly** - The launcher automatically checks the manifest on each launch. If server admins update mods, you'll be notified and they'll sync automatically.
+</Tip>

@@ -1,0 +1,358 @@
+---
+title: 'Utility IPC Handlers'
+description: 'File system operations, system information, and external resource access'
+---
+
+## Overview
+
+The Utility IPC module (`src/main/ipc/utilIpc.js`) provides handlers for common utility operations including file/folder access, opening external links, and retrieving system information.
+
+## Handlers
+
+### open-folder
+
+Opens a folder in the system's file explorer.
+
+<ParamField path="folderPath" type="string" optional>
+  Path to folder to open (defaults to BASE_DIR if not provided)
+</ParamField>
+
+<ParamField path="Returns" type="void">
+  No return value
+</ParamField>
+
+#### Example
+
+```javascript
+// Open launcher directory
+await window.launcher.openFolder();
+
+// Open specific folder
+await window.launcher.openFolder('/path/to/folder');
+
+// Open Minecraft mods folder
+const config = await window.launcher.loadConfig();
+await window.launcher.openFolder(`${config.minecraftDir}/mods`);
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/utilIpc.js:8-10
+ipcMain.handle('open-folder', (_, folderPath) => {
+  shell.openPath(folderPath || BASE_DIR);
+});
+```
+
+---
+
+### open-external
+
+Opens a URL in the system's default web browser.
+
+<ParamField path="url" type="string" required>
+  URL to open (must start with http:// or https://)
+</ParamField>
+
+<ParamField path="Returns" type="void">
+  No return value
+</ParamField>
+
+#### Example
+
+```javascript
+// Open website
+await window.launcher.openExternal('https://umucraft.com');
+
+// Open documentation
+await window.launcher.openExternal('https://docs.umucraft.com');
+
+// Invalid URLs are ignored (no error thrown)
+await window.launcher.openExternal('file:///etc/passwd'); // Ignored
+await window.launcher.openExternal('javascript:alert(1)'); // Ignored
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/utilIpc.js:12-16
+ipcMain.handle('open-external', (_, url) => {
+  if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+    shell.openExternal(url);
+  }
+});
+```
+
+<Warning>
+  Only HTTP/HTTPS URLs are allowed for security. File URLs, JavaScript URIs, and other protocols are silently ignored.
+</Warning>
+
+---
+
+### browse-minecraft-dir
+
+Opens a directory picker dialog for selecting the Minecraft installation directory.
+
+<ParamField path="Returns" type="string | null">
+  Selected directory path, or `null` if user canceled
+</ParamField>
+
+#### Example
+
+```javascript
+// Open directory picker
+const selectedPath = await window.launcher.browseMinecraftDir();
+
+if (selectedPath) {
+  console.log('Selected:', selectedPath);
+  
+  // Update config with new path
+  const config = await window.launcher.loadConfig();
+  config.minecraftDir = selectedPath;
+  await window.launcher.saveConfig(config);
+} else {
+  console.log('User canceled');
+}
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/utilIpc.js:18-26
+ipcMain.handle('browse-minecraft-dir', async () => {
+  const result = await dialog.showOpenDialog(state.mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Selecione a pasta do UmuCraft',
+    defaultPath: BASE_DIR,
+  });
+  if (!result.canceled) return result.filePaths[0];
+  return null;
+});
+```
+
+---
+
+### get-system-info
+
+Retrieves system information including platform, total RAM, and launcher directory.
+
+<ParamField path="Returns" type="object">
+  <Expandable title="properties">
+    <ParamField path="platform" type="string">
+      Operating system platform: `'win32'`, `'darwin'`, or `'linux'`
+    </ParamField>
+    <ParamField path="totalRam" type="number">
+      Total system RAM in megabytes (MB)
+    </ParamField>
+    <ParamField path="launcherDir" type="string">
+      Launcher base directory path
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example
+
+```javascript
+// Get system information
+const sysInfo = await window.launcher.getSystemInfo();
+
+console.log('Platform:', sysInfo.platform);
+console.log('Total RAM:', sysInfo.totalRam, 'MB');
+console.log('Launcher Dir:', sysInfo.launcherDir);
+
+// Use for RAM slider
+const maxRam = Math.floor(sysInfo.totalRam * 0.75); // 75% of total RAM
+const ramSlider = document.getElementById('ram-slider');
+ramSlider.max = maxRam;
+ramSlider.value = Math.min(4096, maxRam);
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/utilIpc.js:28-35
+ipcMain.handle('get-system-info', () => {
+  const totalRam = Math.floor(os.totalmem() / 1024 / 1024);
+  return {
+    platform: process.platform,
+    totalRam,
+    launcherDir: BASE_DIR,
+  };
+});
+```
+
+## Use Cases
+
+### Settings Screen: Directory Selection
+
+```javascript
+class SettingsScreen {
+  async setupDirectoryPicker() {
+    const browseBtn = document.getElementById('browse-dir-btn');
+    const dirInput = document.getElementById('minecraft-dir');
+    
+    browseBtn.addEventListener('click', async () => {
+      const path = await window.launcher.browseMinecraftDir();
+      
+      if (path) {
+        dirInput.value = path;
+        dirInput.dispatchEvent(new Event('change'));
+      }
+    });
+  }
+  
+  async openCurrentDirectory() {
+    const config = await window.launcher.loadConfig();
+    await window.launcher.openFolder(config.minecraftDir);
+  }
+}
+```
+
+### RAM Allocation Slider
+
+```javascript
+async function setupRamSlider() {
+  const sysInfo = await window.launcher.getSystemInfo();
+  const config = await window.launcher.loadConfig();
+  
+  const slider = document.getElementById('ram-slider');
+  const label = document.getElementById('ram-label');
+  
+  // Set bounds: 1GB minimum, 75% of system RAM maximum
+  const minRam = 1024;
+  const maxRam = Math.floor(sysInfo.totalRam * 0.75);
+  
+  slider.min = minRam;
+  slider.max = maxRam;
+  slider.step = 512;
+  slider.value = config.ram || 4096;
+  
+  // Update label
+  function updateLabel() {
+    const gb = (slider.value / 1024).toFixed(1);
+    label.textContent = `${gb} GB`;
+  }
+  
+  updateLabel();
+  slider.addEventListener('input', updateLabel);
+  
+  // Show system info
+  const totalGB = (sysInfo.totalRam / 1024).toFixed(1);
+  document.getElementById('total-ram').textContent = 
+    `Total System RAM: ${totalGB} GB`;
+}
+```
+
+### Quick Access Links
+
+```javascript
+class QuickLinks {
+  setupLinks() {
+    // Open mods folder
+    document.getElementById('open-mods-btn').addEventListener('click', async () => {
+      const config = await window.launcher.loadConfig();
+      await window.launcher.openFolder(`${config.minecraftDir}/mods`);
+    });
+    
+    // Open logs folder
+    document.getElementById('open-logs-btn').addEventListener('click', async () => {
+      const sysInfo = await window.launcher.getSystemInfo();
+      await window.launcher.openFolder(`${sysInfo.launcherDir}/logs`);
+    });
+    
+    // Open website
+    document.getElementById('website-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.launcher.openExternal('https://umucraft.com');
+    });
+    
+    // Open Discord
+    document.getElementById('discord-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.launcher.openExternal('https://discord.gg/umucraft');
+    });
+  }
+}
+```
+
+### Platform-Specific UI
+
+```javascript
+async function applyPlatformStyles() {
+  const sysInfo = await window.launcher.getSystemInfo();
+  
+  // Add platform class to body
+  document.body.classList.add(`platform-${sysInfo.platform}`);
+  
+  // Platform-specific behavior
+  switch (sysInfo.platform) {
+    case 'win32':
+      // Windows-specific UI adjustments
+      document.documentElement.style.setProperty('--font-family', 'Segoe UI');
+      break;
+      
+    case 'darwin':
+      // macOS-specific UI adjustments
+      document.documentElement.style.setProperty('--font-family', '-apple-system');
+      break;
+      
+    case 'linux':
+      // Linux-specific UI adjustments
+      document.documentElement.style.setProperty('--font-family', 'Ubuntu, sans-serif');
+      break;
+  }
+}
+```
+
+## Platform Values
+
+The `platform` field from `get-system-info` returns:
+
+| Platform | Value | Description |
+|----------|-------|-------------|
+| Windows | `'win32'` | Windows (all versions) |
+| macOS | `'darwin'` | macOS / OS X |
+| Linux | `'linux'` | Linux distributions |
+
+## Security Considerations
+
+### URL Validation
+
+The `open-external` handler only allows HTTP/HTTPS URLs:
+
+```javascript
+// Allowed
+window.launcher.openExternal('https://example.com'); // ✓
+window.launcher.openExternal('http://example.com');  // ✓
+
+// Blocked (silently ignored)
+window.launcher.openExternal('file:///etc/passwd');     // ✗
+window.launcher.openExternal('javascript:alert(1)');    // ✗
+window.launcher.openExternal('data:text/html,...');     // ✗
+```
+
+### Path Traversal
+
+Always validate paths before passing to `open-folder`:
+
+```javascript
+// Safe: Use paths from config or system info
+const config = await window.launcher.loadConfig();
+await window.launcher.openFolder(config.minecraftDir);
+
+// Unsafe: Never use user input directly
+const userInput = document.getElementById('path-input').value;
+// Validate or sanitize before using
+```
+
+## Related Handlers
+
+- [load-config](/api/config-ipc#load-config) - Get user configuration including `minecraftDir`
+- [save-config](/api/config-ipc#save-config) - Save updated configuration
+
+## Electron APIs Used
+
+- [shell.openPath](https://www.electronjs.org/docs/latest/api/shell#shellopenpathdirectory) - Opens folder in file explorer
+- [shell.openExternal](https://www.electronjs.org/docs/latest/api/shell#shellopenexternalurl) - Opens URL in browser
+- [dialog.showOpenDialog](https://www.electronjs.org/docs/latest/api/dialog#dialogshowopendialogbrowserwindow-options) - Shows directory picker
+- [os.totalmem](https://nodejs.org/api/os.html#ostotalmem) - Gets total system memory

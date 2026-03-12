@@ -1,0 +1,114 @@
+---
+title: 'IPC Architecture Overview'
+description: 'Understanding the Inter-Process Communication system in Umucraft Launcher'
+---
+
+## Overview
+
+Umucraft Launcher uses Electron's IPC (Inter-Process Communication) system to enable secure communication between the renderer process (UI) and the main process (Node.js backend).
+
+## Architecture
+
+The IPC system consists of three layers:
+
+1. **Preload Script** (`src/main/preload.js:1`) - Exposes a safe API surface to the renderer
+2. **IPC Handlers** - Main process handlers that execute privileged operations
+3. **Renderer Calls** - Frontend invokes handlers via `window.launcher.*`
+
+## Exposed API Surface
+
+The preload script uses `contextBridge` to expose the `window.launcher` object to the renderer process:
+
+```javascript
+// Available in renderer process
+window.launcher.{method}()
+```
+
+All IPC handlers are organized into functional modules:
+
+- **Window Controls** - Minimize, maximize, close window
+- **Bootstrap** - Initial setup and Java detection
+- **Configuration** - Load and save user settings
+- **Launcher** - Manifest fetching, mod sync, game launch
+- **Server** - Minecraft server status checks
+- **Utilities** - File system operations, system info
+
+## IPC Handler Modules
+
+| Module | File | Purpose |
+|--------|------|----------|
+| Window | `windowIpc.js` | Window management (minimize/maximize/close) |
+| Config | `configIpc.js` | Configuration persistence |
+| Launcher | `launcherIpc.js` | Core launcher functionality |
+| Server | `serverIpc.js` | Server ping operations |
+| Utilities | `utilIpc.js` | File/folder operations, system info |
+| Bootstrap | `bootstrapIpc.js` | Initial setup and Java installation |
+
+## Communication Pattern
+
+### Request-Response (Invoke)
+
+Most IPC calls use the invoke pattern for async request-response:
+
+```javascript
+// Renderer process
+const result = await window.launcher.loadConfig();
+
+// Main process
+ipcMain.handle('load-config', async () => {
+  // Process request and return result
+  return config;
+});
+```
+
+### Event Broadcasting
+
+The main process can send events to the renderer:
+
+```javascript
+// Main process
+webContents.send('status', 'Downloading mods...');
+
+// Renderer process
+const unsubscribe = window.launcher.on('status', (message) => {
+  console.log(message);
+});
+```
+
+## Security Model
+
+The preload script uses `contextBridge.exposeInMainWorld` (`src/main/preload.js:3`) to safely expose only specific methods to the renderer. The renderer cannot:
+
+- Access Node.js APIs directly
+- Execute arbitrary IPC channels
+- Access the file system without going through exposed handlers
+
+This follows Electron's security best practices for context isolation.
+
+## Event Channels
+
+These events are sent from main to renderer during launcher operations:
+
+| Event | Description | Payload |
+|-------|-------------|---------|
+| `status` | Status message updates | `string` |
+| `phase` | Current operation phase | `'java' | 'forge' | 'mods' | 'launch'` |
+| `launched` | Game successfully launched | `{ pid: number }` |
+| `progress` | Download/operation progress | `{ percent: number, ... }` |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Launcher IPC" icon="rocket" href="/api/launcher-ipc">
+    Core launcher operations: manifest, sync, launch
+  </Card>
+  <Card title="Config IPC" icon="gear" href="/api/config-ipc">
+    Configuration loading and saving
+  </Card>
+  <Card title="Server IPC" icon="server" href="/api/server-ipc">
+    Minecraft server status checks
+  </Card>
+  <Card title="Utilities IPC" icon="wrench" href="/api/util-ipc">
+    File operations and system info
+  </Card>
+</CardGroup>

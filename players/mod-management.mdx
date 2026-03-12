@@ -1,0 +1,260 @@
+---
+title: 'Mod Management'
+description: 'Understanding automatic mod synchronization in Umucraft Launcher'
+---
+
+## Automatic Mod Sync
+
+Umucraft Launcher features an automatic mod synchronization system that ensures your local mods always match the server configuration. This eliminates manual mod management and prevents version mismatches.
+
+## How Mod Sync Works
+
+### Version Tracking
+
+The launcher tracks mod versions using a manifest file from the server:
+
+```javascript
+const modsVersion = manifest.modsVersion;
+const modsZipUrl = manifest.modsZipUrl;
+const modsZipMd5 = manifest.modsZipMd5;
+```
+
+Each profile contains:
+- **modsVersion**: Version identifier for the mod pack
+- **modsZipUrl**: Download URL for the mod package
+- **modsZipMd5**: MD5 hash for integrity verification
+
+### Local Version Check
+
+Before downloading, the launcher checks if your local mods are up to date:
+
+```javascript
+const versionFile = path.join(profileDir, '.mods-version');
+const localVersion = fs.existsSync(versionFile)
+  ? fs.readFileSync(versionFile, 'utf8').trim()
+  : null;
+
+if (localVersion === modsVersion) {
+  log(`Mods já estão na versão ${modsVersion}, pulando download.`);
+  return 0;
+}
+```
+
+<Info>
+If your local mods match the server version, the sync is skipped instantly, allowing for quick game launches.
+</Info>
+
+## Sync Process
+
+When mods need updating, the launcher follows these steps:
+
+<Steps>
+  <Step title="Download Mod Package">
+    The launcher downloads the mod pack ZIP file from the server:
+    
+    ```javascript
+    await downloadFile(modsZipUrl, zipPath, 'Baixando pacote de mods');
+    ```
+    
+    Progress is displayed as "Baixando pacote de mods..." in the progress panel.
+  </Step>
+
+  <Step title="Verify Integrity">
+    The MD5 hash of the downloaded file is verified:
+    
+    ```javascript
+    const hash = fileHash(zipPath);
+    if (hash !== modsZipMd5) {
+      throw new Error(`MD5 inválido: esperado ${modsZipMd5}, obteve ${hash}`);
+    }
+    ```
+    
+    Progress displays "Verificando integridade..."
+    
+    <Warning>
+    If the MD5 hash doesn't match, the download is rejected and you'll need to try again. This protects against corrupted downloads.
+    </Warning>
+  </Step>
+
+  <Step title="Clear Old Mods">
+    The launcher removes all existing mods from the mods directory:
+    
+    ```javascript
+    const existing = fs.readdirSync(modsDir);
+    for (const file of existing) {
+      const filePath = path.join(modsDir, file);
+      // Remove files and directories
+    }
+    ```
+    
+    Progress shows "Limpando pasta de mods..."
+  </Step>
+
+  <Step title="Extract New Mods">
+    The new mod package is extracted:
+    
+    ```javascript
+    await extractZip(zipPath, { dir: modsDir });
+    fs.writeFileSync(versionFile, modsVersion);
+    ```
+    
+    Progress displays "Extraindo mods..." at 50%
+  </Step>
+
+  <Step title="Complete">
+    The sync completes with a summary:
+    
+    ```javascript
+    const newFiles = fs.readdirSync(modsDir).filter(f => f.endsWith('.jar'));
+    log(`Mods atualizados para versão ${modsVersion} (${newFiles.length} mods extraídos).`);
+    ```
+    
+    Progress shows "Mods atualizados!" at 100%
+  </Step>
+</Steps>
+
+## Viewing Installed Mods
+
+The **Mods** tab displays information about installed modpacks:
+
+### Modpack Display
+
+For each profile, the launcher shows:
+
+```javascript
+const nameEl = document.createElement('div');
+nameEl.textContent = `Minecraft ${prof.minecraftVersion || '?'}`;
+
+if (prof.forgeVersion) {
+  forgeEl.textContent = `Forge ${prof.forgeVersion}`;
+}
+
+if (prof.modsVersion) {
+  verEl.textContent = `Versão dos mods: ${prof.modsVersion}`;
+}
+
+statusEl.textContent = prof.modsZipUrl 
+  ? 'Pacote de mods disponível' 
+  : 'Sem pacote configurado';
+```
+
+**Information displayed**:
+- Minecraft version
+- Forge version (if applicable)
+- Current mods version
+- Package availability status
+
+<Note>
+If no modpacks are configured in the manifest, the mods tab displays "Nenhum modpack configurado."
+</Note>
+
+## Profile-Specific Mods
+
+Each profile has its own mod configuration:
+
+```javascript
+const profileNames = appState.manifest.profiles 
+  ? Object.keys(appState.manifest.profiles) 
+  : [];
+
+profileNames.forEach(profileName => {
+  const prof = appState.manifest.profiles[profileName];
+  // Display modpack group for this profile
+});
+```
+
+Mods are stored in profile-specific directories, allowing you to switch between different modpacks without conflicts.
+
+## Mod Sync Behavior
+
+### Automatic Updates
+
+Mod synchronization happens automatically:
+- **At Launch**: Checked before every game launch
+- **Version Comparison**: Only downloads if versions differ
+- **Mandatory**: Cannot be disabled to ensure server compatibility
+
+### Temporary Files
+
+During sync, temporary files are stored:
+
+```javascript
+const tmpDir = path.join(os.tmpdir(), 'umulauncher-mods');
+const zipPath = path.join(tmpDir, 'mods.zip');
+```
+
+These are automatically cleaned up after extraction.
+
+### Error Handling
+
+If mod sync fails:
+- The launch process is aborted
+- Error messages appear in the log console
+- The temporary download is deleted
+- You can retry the launch to attempt sync again
+
+<Warning>
+Mod sync requires an internet connection. Ensure you're online before launching the game.
+</Warning>
+
+## Benefits of Automatic Sync
+
+### For Players
+
+- **Zero Manual Work**: No need to download or install mods manually
+- **Always Compatible**: Guaranteed to match server requirements
+- **Automatic Updates**: Receive mod updates seamlessly
+- **Integrity Verified**: MD5 checks ensure file correctness
+- **Clean Updates**: Old mods are completely removed before new ones install
+
+### Version Control
+
+The `.mods-version` file in your profile directory tracks:
+- Current installed mod version
+- Last successful sync
+- Allows quick version checks without network calls
+
+<Info>
+If you manually modify the mods folder, the launcher will detect the version mismatch and re-sync on next launch.
+</Info>
+
+## Troubleshooting Mod Sync
+
+### Sync Failures
+
+If mod sync fails:
+
+<Steps>
+  <Step title="Check Internet Connection">
+    Ensure stable internet access for downloading the mod package.
+  </Step>
+  
+  <Step title="Review Log Console">
+    Check the log console for specific error messages indicating the failure point.
+  </Step>
+  
+  <Step title="Retry Launch">
+    The launcher will attempt to re-sync on the next launch attempt.
+  </Step>
+  
+  <Step title="Clear Temp Files">
+    If issues persist, manually clear the `umulauncher-mods` folder in your system's temp directory.
+  </Step>
+</Steps>
+
+### MD5 Verification Failures
+
+If you see "MD5 inválido" errors:
+
+- The download may have been corrupted
+- Try launching again to re-download
+- Check your internet connection stability
+- Contact server administrators if the issue persists
+
+### No Mod Package Configured
+
+If a profile shows "Sem pacote configurado":
+
+- This profile doesn't have automatic mod sync enabled
+- You may need to manually install mods
+- Contact the server administrator for the correct manifest configuration

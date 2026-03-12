@@ -1,0 +1,99 @@
+---
+title: 'fileHash.js'
+description: 'MD5 file hash calculation utility'
+---
+
+## Overview
+
+The `fileHash.js` module provides MD5 hash calculation for files, commonly used for file integrity verification and change detection.
+
+**Source:** `src/main/utils/fileHash.js`
+
+## Functions
+
+### fileHash()
+
+Calculates the MD5 hash of a file.
+
+```javascript
+function fileHash(filePath)
+```
+
+<ParamField path="filePath" type="string" required>
+  The absolute or relative path to the file to hash.
+</ParamField>
+
+**Returns:** `string | null` - The MD5 hash as a hexadecimal string, or `null` if the file cannot be read.
+
+#### Behavior
+
+- **Synchronous Operation:** Reads the entire file into memory synchronously (`src/main/utils/fileHash.js:7`)
+- **MD5 Algorithm:** Uses Node.js crypto module to compute MD5 digest (`src/main/utils/fileHash.js:8`)
+- **Error Handling:** Returns `null` for any file read errors (file not found, permission denied, etc.) (`src/main/utils/fileHash.js:9-11`)
+- **Output Format:** Returns lowercase hexadecimal string (32 characters)
+
+#### Example Usage
+
+```javascript
+const { fileHash } = require('./utils/fileHash');
+
+// Calculate hash of a file
+const hash = fileHash('/path/to/file.jar');
+if (hash) {
+  console.log(`File hash: ${hash}`);
+  // Output: File hash: 5d41402abc4b2a76b9719d911017c592
+} else {
+  console.error('Failed to read file');
+}
+
+// Verify file integrity
+const expectedHash = '5d41402abc4b2a76b9719d911017c592';
+const actualHash = fileHash('/path/to/downloaded.jar');
+
+if (actualHash === expectedHash) {
+  console.log('File integrity verified');
+} else {
+  console.error('File corruption detected');
+}
+```
+
+#### Use Cases
+
+1. **File Integrity Verification:** Compare downloaded files against expected hashes from manifests
+2. **Change Detection:** Detect if a file has been modified since last check
+3. **Duplicate Detection:** Identify identical files by comparing hashes
+4. **Cache Validation:** Verify cached files haven't been corrupted
+
+#### Implementation Details
+
+The hashing process (`src/main/utils/fileHash.js:5-12`):
+
+1. Reads entire file into buffer using `fs.readFileSync()` (`src/main/utils/fileHash.js:7`)
+2. Creates MD5 hash instance with `crypto.createHash('md5')` (`src/main/utils/fileHash.js:8`)
+3. Updates hash with file buffer (`src/main/utils/fileHash.js:8`)
+4. Generates hexadecimal digest (`src/main/utils/fileHash.js:8`)
+5. Returns `null` if any error occurs (`src/main/utils/fileHash.js:9-11`)
+
+#### Performance Considerations
+
+- **Synchronous I/O:** This function blocks the event loop while reading the file
+- **Memory Usage:** Loads entire file into memory, which may be problematic for very large files
+- **Best For:** Small to medium-sized files (< 100MB) where simplicity is preferred over performance
+
+<Warning>
+  This function uses synchronous file I/O which blocks the Node.js event loop. For very large files or performance-critical applications, consider implementing a streaming hash calculation.
+</Warning>
+
+<Info>
+  MD5 is not cryptographically secure and should not be used for security purposes. It is suitable for file integrity checks and cache validation where collision resistance is not critical.
+</Info>
+
+## Dependencies
+
+- `fs` - File system operations
+- `crypto` - MD5 hash calculation
+
+## Related
+
+- [Download Utility](/api/download) - File download with verification
+- [Paths](/api/paths) - File system path constants

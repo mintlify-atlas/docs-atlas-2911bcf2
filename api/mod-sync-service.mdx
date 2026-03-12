@@ -1,0 +1,357 @@
+---
+title: "Mod Sync Service"
+description: "Automated mod synchronization service for downloading and managing modpacks"
+icon: "rotate"
+---
+
+## Overview
+
+The `modSyncService.js` handles automatic mod synchronization from remote modpack ZIP files. It downloads modpacks, verifies integrity via MD5 hashing, and extracts them to the profile's mods directory.
+
+Source: `src/main/services/modSyncService.js`
+
+## Main Function
+
+### syncMods
+
+Synchronizes mods for a profile by downloading and extracting a modpack ZIP.
+
+<ParamField path="manifest" type="object" required>
+  Server manifest configuration containing mod information
+  
+  <ParamField path="modsVersion" type="string" required>
+    Version identifier for the modpack (e.g., "2.4.1", "v3-hotfix")
+  </ParamField>
+  
+  <ParamField path="modsZipUrl" type="string" required>
+    Direct download URL for the modpack ZIP file
+  </ParamField>
+  
+  <ParamField path="modsZipMd5" type="string">
+    Optional MD5 hash for integrity verification
+  </ParamField>
+</ParamField>
+
+<ParamField path="profileDir" type="string" required>
+  Absolute path to the Minecraft profile directory where mods will be installed
+</ParamField>
+
+<ResponseField name="returns" type="Promise<number>">
+  Number of JAR files extracted to the mods folder
+</ResponseField>
+
+#### Synchronization Process
+
+The function performs these operations (src/main/services/modSyncService.js:10-85):
+
+1. **Version Check**: Compares local version against manifest version
+2. **Download**: Downloads modpack ZIP to temp directory if update needed
+3. **Verification**: Validates MD5 hash if provided in manifest
+4. **Cleanup**: Removes all existing mods from the mods directory
+5. **Extraction**: Extracts ZIP contents into the mods folder
+6. **Version Tracking**: Saves current version to `.mods-version` file
+
+```javascript
+const { syncMods } = require('./services/modSyncService');
+
+const manifest = {
+  modsVersion: '2.4.1',
+  modsZipUrl: 'https://example.com/modpack-v2.4.1.zip',
+  modsZipMd5: 'a3f5c8e1b2d4...' // Optional
+};
+
+const count = await syncMods(manifest, '/path/to/.minecraft');
+console.log(`Installed ${count} mods`);
+```
+
+<Note>
+If the local mods version matches the manifest version, the sync is skipped entirely and returns 0 (see src/main/services/modSyncService.js:29-33).
+</Note>
+
+---
+
+## Version Management
+
+The service uses a local version file to track the currently installed modpack version:
+
+**Version file location**: `{profileDir}/.mods-version`
+
+```javascript
+// Version check logic (src/main/services/modSyncService.js:24-33)
+const versionFile = path.join(profileDir, '.mods-version');
+const localVersion = fs.existsSync(versionFile)
+  ? fs.readFileSync(versionFile, 'utf8').trim()
+  : null;
+
+if (localVersion === modsVersion) {
+  log(`Mods já estão na versão ${modsVersion}, pulando download.`);
+  send('sync-progress', { current: 1, total: 1, filename: 'Mods atualizados', percent: 100 });
+  return 0;
+}
+```
+
+When a new version is detected:
+
+```javascript
+log(`Atualizando mods: ${localVersion || 'nenhuma'} -> ${modsVersion}`);
+```
+
+---
+
+## Download Process
+
+Mod ZIP files are downloaded to a temporary directory to avoid corrupting the mods folder during download:
+
+```javascript
+// Temp directory setup (src/main/services/modSyncService.js:39-41)
+const tmpDir = path.join(os.tmpdir(), 'umulauncher-mods');
+fs.mkdirSync(tmpDir, { recursive: true });
+const zipPath = path.join(tmpDir, 'mods.zip');
+
+await downloadFile(modsZipUrl, zipPath, 'Baixando pacote de mods');
+```
+
+Progress updates are sent via IPC:
+
+```javascript
+send('sync-progress', { 
+  current: 0, 
+  total: 1, 
+  filename: 'Baixando pacote de mods...', 
+  percent: 0 
+});
+```
+
+---
+
+## Integrity Verification
+
+If an MD5 hash is provided in the manifest, the downloaded ZIP is verified before extraction:
+
+```javascript
+// MD5 verification (src/main/services/modSyncService.js:46-54)
+if (modsZipMd5) {
+  send('sync-progress', { current: 0, total: 1, filename: 'Verificando integridade...', percent: 0 });
+  const hash = fileHash(zipPath);
+  if (hash !== modsZipMd5) {
+    fs.unlinkSync(zipPath);
+    throw new Error(`MD5 inválido: esperado ${modsZipMd5}, obteve ${hash}`);
+  }
+  log('MD5 verificado com sucesso.');
+}
+```
+
+<Note>
+If MD5 verification fails, the downloaded ZIP is deleted and an error is thrown (src/main/services/modSyncService.js:50-52).
+</Note>
+
+---
+
+## Mods Directory Cleanup
+
+Before extracting the new modpack, all existing files and directories in the mods folder are removed:
+
+```javascript
+// Cleanup logic (src/main/services/modSyncService.js:56-68)
+send('sync-progress', { current: 0, total: 1, filename: 'Limpando pasta de mods...', percent: 0 });
+const existing = fs.readdirSync(modsDir);
+for (const file of existing) {
+  const filePath = path.join(modsDir, file);
+  const stat = fs.statSync(filePath);
+  if (stat.isDirectory()) {
+    fs.rmSync(filePath, { recursive: true, force: true });
+  } else {
+    fs.unlinkSync(filePath);
+  }
+}
+log(`Pasta mods limpa (${existing.length} itens removidos).`);
+```
+
+This ensures:
+- No old mod versions remain
+- No conflicts between old and new mods
+- Clean slate for the new modpack
+
+---
+
+## ZIP Extraction
+
+The modpack ZIP is extracted directly into the mods directory:
+
+```javascript
+// Extraction (src/main/services/modSyncService.js:71-72)
+send('sync-progress', { current: 0, total: 1, filename: 'Extraindo mods...', percent: 50 });
+await extractZip(zipPath, { dir: modsDir });
+```
+
+After extraction, the version is saved and temp files are cleaned up:
+
+```javascript
+// Version tracking and cleanup (src/main/services/modSyncService.js:74-78)
+fs.writeFileSync(versionFile, modsVersion);
+
+// Cleanup temp
+try { fs.unlinkSync(zipPath); } catch {}
+```
+
+<Note>
+Temp file cleanup errors are silently ignored since the file may have already been deleted.
+</Note>
+
+---
+
+## Result Reporting
+
+The function counts and reports the number of JAR files (mods) that were extracted:
+
+```javascript
+// Count extracted mods (src/main/services/modSyncService.js:80-84)
+const newFiles = fs.readdirSync(modsDir).filter(f => f.endsWith('.jar'));
+log(`Mods atualizados para versão ${modsVersion} (${newFiles.length} mods extraídos).`);
+send('sync-progress', { current: 1, total: 1, filename: 'Mods atualizados!', percent: 100 });
+
+return newFiles.length;
+```
+
+---
+
+## IPC Progress Events
+
+The service sends `sync-progress` events throughout the synchronization process:
+
+```javascript
+// Event structure
+send('sync-progress', {
+  current: 0,           // Current step
+  total: 1,             // Total steps
+  filename: 'Status',   // Current operation description
+  percent: 50           // Progress percentage (0-100)
+});
+```
+
+**Progress stages**:
+
+1. **Already updated**: `percent: 100` (src/main/services/modSyncService.js:31)
+2. **Downloading**: `percent: 0` (src/main/services/modSyncService.js:36)
+3. **Verifying**: `percent: 0` (src/main/services/modSyncService.js:47)
+4. **Cleaning**: `percent: 0` (src/main/services/modSyncService.js:57)
+5. **Extracting**: `percent: 50` (src/main/services/modSyncService.js:71)
+6. **Complete**: `percent: 100` (src/main/services/modSyncService.js:82)
+
+---
+
+## Error Handling
+
+### No Modpack URL
+
+If no `modsZipUrl` is provided in the manifest, sync is skipped:
+
+```javascript
+// Graceful skip (src/main/services/modSyncService.js:18-21)
+if (!modsZipUrl) {
+  log('Nenhum modsZipUrl no manifest, pulando sync.');
+  return 0;
+}
+```
+
+### MD5 Mismatch
+
+Throws an error with details about expected vs. actual hash:
+
+```javascript
+throw new Error(`MD5 inválido: esperado ${modsZipMd5}, obteve ${hash}`);
+```
+
+### Download Failures
+
+Download errors propagate from the `downloadFile` utility and should be caught by the caller.
+
+### Extraction Failures
+
+ZIP extraction errors propagate from the `extract-zip` library.
+
+---
+
+## Usage Examples
+
+### Basic Sync
+
+```javascript
+const { syncMods } = require('./services/modSyncService');
+
+try {
+  const manifest = {
+    modsVersion: '3.0.0',
+    modsZipUrl: 'https://cdn.example.com/mods-3.0.0.zip'
+  };
+  
+  const modCount = await syncMods(manifest, '/home/user/.minecraft');
+  
+  if (modCount > 0) {
+    console.log(`Successfully installed ${modCount} mods`);
+  } else {
+    console.log('Mods were already up to date');
+  }
+} catch (error) {
+  console.error('Mod sync failed:', error.message);
+}
+```
+
+### With MD5 Verification
+
+```javascript
+const manifest = {
+  modsVersion: '3.0.0',
+  modsZipUrl: 'https://cdn.example.com/mods-3.0.0.zip',
+  modsZipMd5: 'a3f5c8e1b2d4f6a8c9e0f1a2b3c4d5e6'
+};
+
+try {
+  await syncMods(manifest, '/path/to/profile');
+  console.log('Mods synced and verified successfully');
+} catch (error) {
+  if (error.message.includes('MD5 inválido')) {
+    console.error('Downloaded file is corrupted or tampered');
+  } else {
+    console.error('Sync error:', error);
+  }
+}
+```
+
+### Listening to Progress
+
+```javascript
+const { ipcMain } = require('electron');
+
+ipcMain.on('sync-progress', (event, data) => {
+  console.log(`${data.filename} - ${data.percent}%`);
+  // Update UI progress bar
+  mainWindow.webContents.send('update-progress', data);
+});
+
+// Start sync
+const modCount = await syncMods(manifest, profileDir);
+```
+
+---
+
+## File Structure
+
+After a successful sync, the profile directory structure:
+
+```
+profileDir/
+├── .mods-version          # Version tracking file
+└── mods/
+    ├── mod1.jar
+    ├── mod2.jar
+    ├── mod3.jar
+    └── config/            # If included in ZIP
+        └── mod-config.toml
+```
+
+The `.mods-version` file contains only the version string:
+
+```
+3.0.0
+```

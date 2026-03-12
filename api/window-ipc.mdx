@@ -1,0 +1,294 @@
+---
+title: 'Window IPC Handlers'
+description: 'Window management: minimize, maximize, and close operations'
+---
+
+## Overview
+
+The Window IPC module (`src/main/ipc/windowIpc.js`) provides handlers for controlling the main window's state. These enable custom title bar controls in frameless window mode.
+
+## Handlers
+
+### window-minimize
+
+Minimizes the launcher window to the taskbar.
+
+<ParamField path="Returns" type="void">
+  No return value
+</ParamField>
+
+#### Example
+
+```javascript
+// Renderer process
+await window.launcher.minimize();
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/windowIpc.js:6
+ipcMain.handle('window-minimize', () => state.mainWindow.minimize());
+```
+
+---
+
+### window-maximize
+
+Toggles the window between maximized and restored states.
+
+<ParamField path="Returns" type="void">
+  No return value
+</ParamField>
+
+#### Example
+
+```javascript
+// Renderer process
+await window.launcher.maximize();
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/windowIpc.js:7-9
+ipcMain.handle('window-maximize', () => {
+  state.mainWindow.isMaximized() ? state.mainWindow.unmaximize() : state.mainWindow.maximize();
+});
+```
+
+---
+
+### window-close
+
+Closes the launcher window and quits the application.
+
+<ParamField path="Returns" type="void">
+  No return value
+</ParamField>
+
+#### Example
+
+```javascript
+// Renderer process
+await window.launcher.close();
+```
+
+#### Implementation
+
+```javascript
+// src/main/ipc/windowIpc.js:10
+ipcMain.handle('window-close', () => app.quit());
+```
+
+## Usage: Custom Title Bar
+
+These handlers are typically used to implement a custom title bar in frameless window mode:
+
+```javascript
+// Custom title bar component
+class TitleBar {
+  constructor() {
+    this.setupControls();
+  }
+  
+  setupControls() {
+    // Minimize button
+    document.getElementById('minimize-btn').addEventListener('click', () => {
+      window.launcher.minimize();
+    });
+    
+    // Maximize/Restore button
+    const maximizeBtn = document.getElementById('maximize-btn');
+    maximizeBtn.addEventListener('click', () => {
+      window.launcher.maximize();
+      
+      // Toggle icon between maximize and restore
+      maximizeBtn.classList.toggle('maximized');
+    });
+    
+    // Close button
+    document.getElementById('close-btn').addEventListener('click', () => {
+      window.launcher.close();
+    });
+  }
+}
+
+// Initialize custom title bar
+const titleBar = new TitleBar();
+```
+
+## Frameless Window Configuration
+
+To use these handlers effectively, the main window should be created as frameless:
+
+```javascript
+// Main process window configuration
+const mainWindow = new BrowserWindow({
+  width: 1000,
+  height: 600,
+  frame: false,  // Remove default title bar
+  webPreferences: {
+    preload: path.join(__dirname, 'preload.js'),
+    contextIsolation: true
+  }
+});
+```
+
+## CSS for Draggable Regions
+
+Enable window dragging in custom title bar:
+
+```css
+.title-bar {
+  -webkit-app-region: drag;
+  height: 32px;
+  background: #1a1a1a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title-bar-buttons {
+  -webkit-app-region: no-drag;
+  display: flex;
+  gap: 0;
+}
+
+.title-bar-button {
+  width: 46px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.title-bar-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.title-bar-button.close:hover {
+  background: #e81123;
+  color: white;
+}
+```
+
+## HTML Structure
+
+```html
+<div class="title-bar">
+  <div class="title-bar-title">
+    <span>Umucraft Launcher</span>
+  </div>
+  <div class="title-bar-buttons">
+    <button id="minimize-btn" class="title-bar-button" aria-label="Minimize">
+      —
+    </button>
+    <button id="maximize-btn" class="title-bar-button" aria-label="Maximize">
+      □
+    </button>
+    <button id="close-btn" class="title-bar-button close" aria-label="Close">
+      ✕
+    </button>
+  </div>
+</div>
+```
+
+## Platform Differences
+
+### Windows
+- Minimize: Window slides to taskbar with animation
+- Maximize: Window fills screen excluding taskbar
+- Close: Calls `app.quit()` to terminate process
+
+### macOS
+- Minimize: Window minimizes to Dock
+- Maximize: Enters fullscreen mode (or zoom to fit content)
+- Close: Closes window but app may continue running in Dock
+
+### Linux
+- Behavior varies by window manager
+- Generally similar to Windows behavior
+
+## Best Practices
+
+### Accessibility
+
+Always provide proper ARIA labels:
+
+```html
+<button 
+  id="minimize-btn" 
+  aria-label="Minimize window"
+  title="Minimize">
+  —
+</button>
+```
+
+### Keyboard Shortcuts
+
+Implement standard keyboard shortcuts:
+
+```javascript
+document.addEventListener('keydown', (e) => {
+  // Alt+F4 or Ctrl+W to close
+  if ((e.altKey && e.key === 'F4') || (e.ctrlKey && e.key === 'w')) {
+    e.preventDefault();
+    window.launcher.close();
+  }
+});
+```
+
+### Prevent Accidental Closure
+
+Add confirmation for unsaved changes:
+
+```javascript
+let hasUnsavedChanges = false;
+
+document.getElementById('close-btn').addEventListener('click', async () => {
+  if (hasUnsavedChanges) {
+    const confirmed = confirm('You have unsaved changes. Close anyway?');
+    if (!confirmed) return;
+  }
+  
+  await window.launcher.close();
+});
+```
+
+## Maximize State Detection
+
+The `window-maximize` handler toggles state, but doesn't return the new state. Track it in the renderer:
+
+```javascript
+class WindowController {
+  constructor() {
+    this.isMaximized = false;
+    this.setupMaximizeButton();
+  }
+  
+  async toggleMaximize() {
+    await window.launcher.maximize();
+    this.isMaximized = !this.isMaximized;
+    this.updateMaximizeIcon();
+  }
+  
+  updateMaximizeIcon() {
+    const btn = document.getElementById('maximize-btn');
+    btn.innerHTML = this.isMaximized ? '▢' : '□'; // Restore or maximize icon
+    btn.setAttribute('aria-label', this.isMaximized ? 'Restore' : 'Maximize');
+  }
+  
+  setupMaximizeButton() {
+    document.getElementById('maximize-btn').addEventListener('click', () => {
+      this.toggleMaximize();
+    });
+  }
+}
+```
+
+## Related APIs
+
+- Electron [BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window) documentation
+- CSS [-webkit-app-region](https://www.electronjs.org/docs/latest/api/frameless-window#draggable-region) for draggable regions

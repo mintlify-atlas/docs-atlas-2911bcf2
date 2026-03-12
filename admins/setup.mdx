@@ -1,0 +1,119 @@
+---
+title: Initial Setup
+description: Get started with Umucraft Launcher as a server administrator
+---
+
+This guide will walk you through the initial setup process for configuring Umucraft Launcher for your Minecraft server.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- Node.js installed (version 16 or higher)
+- A Minecraft Forge server set up
+- A way to host files publicly (Dropbox, GitHub, or your own server)
+- Your mod pack prepared as `.jar` files
+
+## Installation
+
+<Steps>
+  <Step title="Clone or download the source repository">
+    Get the Umucraft Launcher source code from your repository.
+    
+    ```bash
+    git clone <repository-url>
+    cd umucraft-launcher
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all required npm packages:
+    
+    ```bash
+    npm install
+    ```
+  </Step>
+
+  <Step title="Test the launcher in development mode">
+    Run the launcher to ensure everything works:
+    
+    ```bash
+    npm run dev
+    ```
+    
+    This will open the launcher with DevTools enabled for debugging.
+  </Step>
+</Steps>
+
+## Directory Structure
+
+The launcher uses a base directory at `~/.UmuCraft/` (or `C:\Users\<user>\.UmuCraft\` on Windows) with the following structure:
+
+| Directory | Purpose |
+|-----------|----------|
+| `java/` | Java runtime managed by the launcher |
+| `versions/` | Minecraft client versions (jars + JSONs) |
+| `mods/` | Synchronized mods from your manifest |
+| `modpacks/` | Modpack files |
+| `libraries/` | Minecraft and Forge libraries |
+| `assets/` | Minecraft assets |
+| `cache/` | Cached manifest (offline fallback) |
+| `config/` | Mod configurations |
+| `logs/` | Bootstrap and launcher logs |
+| `config.json` | Player settings (username, RAM, profile) |
+
+These directories are created automatically when the launcher first runs.
+
+## Java Auto-Installation
+
+One of the key features of Umucraft Launcher is automatic Java detection and installation:
+
+- When players open the launcher, a bootstrap window checks for Java
+- If no compatible Java version is found, it automatically downloads Adoptium JDK
+- After validation, the main launcher window opens
+
+**Java version requirements:**
+
+| Minecraft Version | Required Java |
+|-------------------|---------------|
+| 1.17 - 1.19 | Java 17 |
+| 1.20 - 1.21 | Java 21 |
+
+<Note>
+Players do **not** need to install Java manually. The launcher handles this automatically.
+</Note>
+
+## Player Requirements
+
+<Warning>
+While the launcher auto-syncs mods, players must still install **Forge** manually using the official Forge installer. The launcher does not install Forge itself.
+</Warning>
+
+Players will need to:
+
+1. Download and run the Forge installer for your Minecraft version
+2. Download and install your Umucraft Launcher executable
+3. Enter their username and click "JOGAR" (Play)
+
+## Offline Mode Support
+
+The launcher uses offline authentication by default. Ensure your server has:
+
+```properties
+online-mode=false
+```
+
+This allows players without Minecraft accounts to join your server.
+
+## Next Steps
+
+Now that you have the launcher set up, proceed to:
+
+<CardGroup cols={2}>
+  <Card title="Manifest Configuration" icon="file-code" href="/admins/manifest-configuration">
+    Learn how to create and configure your manifest.json file
+  </Card>
+  <Card title="Server Configuration" icon="server" href="/admins/server-configuration">
+    Configure server list and Discord integration
+  </Card>
+</CardGroup>

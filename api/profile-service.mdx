@@ -1,0 +1,409 @@
+---
+title: "Profile Service"
+description: "Default profile initialization and configuration management"
+icon: "user"
+---
+
+## Overview
+
+The `profileService.js` handles initialization of the default Minecraft profile, including downloading the vanilla Minecraft client and setting up launcher configuration.
+
+Source: `src/main/services/profileService.js`
+
+## Main Function
+
+### ensureDefaultProfile
+
+Ensures that the default Minecraft profile is properly initialized and ready to use.
+
+<ResponseField name="returns" type="Promise<void>">
+  Resolves when the default profile is ready
+</ResponseField>
+
+This function is **idempotent** - it can be called multiple times safely. If the profile is already set up, it returns immediately.
+
+#### Initialization Process
+
+The function performs these operations (src/main/services/profileService.js:9-59):
+
+1. **Config Loading**: Reads existing configuration from `config.json`
+2. **Ready Check**: Returns early if `defaultProfileReady` flag is set
+3. **Version Directory Setup**: Creates directory for the latest Minecraft version
+4. **Client Download**: Downloads Minecraft client JAR and version JSON if missing
+5. **Config Update**: Sets default values and marks profile as ready
+
+```javascript
+const { ensureDefaultProfile } = require('./services/profileService');
+
+// Call during launcher startup
+async function initializeLauncher() {
+  try {
+    await ensureDefaultProfile();
+    console.log('Launcher is ready!');
+  } catch (error) {
+    console.error('Failed to initialize:', error.message);
+  }
+}
+
+initializeLauncher();
+```
+
+<Note>
+If the profile is already initialized (indicated by `defaultProfileReady: true` in config), the function returns immediately without downloading anything (see src/main/services/profileService.js:16).
+</Note>
+
+---
+
+## Configuration Management
+
+The service manages the launcher configuration file at `{BASE_DIR}/config.json`.
+
+### Configuration Structure
+
+After initialization, the config file contains:
+
+```json
+{
+  "defaultProfileReady": true,
+  "username": "",
+  "ram": 4096,
+  "selectedProfile": "default",
+  "minecraftDir": "/path/to/base/dir"
+}
+```
+
+### Configuration Loading
+
+```javascript
+// Config loading logic (src/main/services/profileService.js:10-14)
+const configPath = path.join(BASE_DIR, 'config.json');
+let config = {};
+if (fs.existsSync(configPath)) {
+  try { config = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch {}
+}
+```
+
+Parsing errors are silently ignored, resulting in an empty config object.
+
+### Ready Check
+
+```javascript
+// Early return if already initialized (src/main/services/profileService.js:16)
+if (config.defaultProfileReady) return;
+```
+
+The `defaultProfileReady` flag prevents redundant downloads and initialization.
+
+---
+
+## Minecraft Client Download
+
+The service downloads the latest supported Minecraft version defined in `LATEST_MC_VERSION` configuration.
+
+### Download Process
+
+```javascript
+// Version directory setup (src/main/services/profileService.js:20-21)
+const versionDir = path.join(BASE_DIR, 'versions', LATEST_MC_VERSION);
+fs.mkdirSync(versionDir, { recursive: true });
+
+const clientJar = path.join(versionDir, `${LATEST_MC_VERSION}.jar`);
+```
+
+The client is only downloaded if the JAR doesn't already exist:
+
+```javascript
+// Conditional download (src/main/services/profileService.js:24-48)
+if (!fs.existsSync(clientJar)) {
+  try {
+    log(`Fetching version manifest for ${LATEST_MC_VERSION}...`);
+    const versionManifest = await httpGetJson('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json');
+    const versionEntry = versionManifest.versions.find(v => v.id === LATEST_MC_VERSION);
+
+    if (versionEntry) {
+      const versionMeta = await httpGetJson(versionEntry.url);
+      const clientUrl = versionMeta.downloads?.client?.url;
+      if (clientUrl) {
+        log(`Downloading Minecraft ${LATEST_MC_VERSION} client...`);
+        send('status', `Baixando Minecraft ${LATEST_MC_VERSION}...`);
+        await downloadFile(clientUrl, clientJar, `Minecraft ${LATEST_MC_VERSION}`);
+
+        fs.writeFileSync(
+          path.join(versionDir, `${LATEST_MC_VERSION}.json`),
+          JSON.stringify(versionMeta, null, 2)
+        );
+        log(`Minecraft ${LATEST_MC_VERSION} client downloaded.`);
+      }
+    }
+  } catch (err) {
+    log(`Could not download Minecraft client: ${err.message}`);
+  }
+}
+```
+
+### Mojang API Flow
+
+1. **Version Manifest**: `GET https://piston-meta.mojang.com/mc/game/version_manifest_v2.json`
+   - Returns list of all Minecraft versions with metadata URLs
+
+2. **Version Metadata**: `GET {versionEntry.url}`
+   - Contains download URLs for client, server, and mappings
+   - Contains libraries, assets, and launch configuration
+
+3. **Client Download**: `GET {versionMeta.downloads.client.url}`
+   - Downloads the Minecraft client JAR
+
+<Note>
+Download failures are logged but do not throw errors. The launcher can still function if the client JAR already exists from a previous installation (see src/main/services/profileService.js:45-47).
+</Note>
+
+---
+
+## Default Configuration Values
+
+After ensuring the profile is ready, default values are set:
+
+```javascript
+// Default values (src/main/services/profileService.js:50-54)
+config.defaultProfileReady = true;
+config.username = config.username || '';
+config.ram = config.ram || 4096;
+config.selectedProfile = config.selectedProfile || CONFIG.DEFAULT_PROFILE;
+config.minecraftDir = BASE_DIR;
+```
+
+### Configuration Fields
+
+<ParamField path="defaultProfileReady" type="boolean">
+  Flag indicating the default profile has been initialized
+</ParamField>
+
+<ParamField path="username" type="string">
+  Player username (defaults to empty string, set by user later)
+</ParamField>
+
+<ParamField path="ram" type="number">
+  RAM allocation in megabytes (defaults to 4096 = 4GB)
+</ParamField>
+
+<ParamField path="selectedProfile" type="string">
+  Currently selected profile ID (defaults to `CONFIG.DEFAULT_PROFILE`)
+</ParamField>
+
+<ParamField path="minecraftDir" type="string">
+  Absolute path to the Minecraft installation directory
+</ParamField>
+
+---
+
+## File System Structure
+
+After successful initialization, the file system structure:
+
+```
+BASE_DIR/
+├── config.json                    # Launcher configuration
+└── versions/
+    └── {LATEST_MC_VERSION}/
+        ├── {version}.jar          # Minecraft client
+        └── {version}.json         # Version metadata
+```
+
+Example with `LATEST_MC_VERSION = "1.20.1"`:
+
+```
+/home/user/.umulauncher/
+├── config.json
+└── versions/
+    └── 1.20.1/
+        ├── 1.20.1.jar
+        └── 1.20.1.json
+```
+
+---
+
+## IPC Status Events
+
+The service sends status updates during initialization:
+
+```javascript
+// Status messages
+send('status', 'Preparando perfil padrão...');           // src/main/services/profileService.js:18
+send('status', `Baixando Minecraft ${LATEST_MC_VERSION}...`); // src/main/services/profileService.js:35
+send('status', 'Perfil padrão pronto.');                 // src/main/services/profileService.js:57
+```
+
+**Event flow**:
+
+1. `Preparando perfil padrão...` - Starting initialization
+2. `Baixando Minecraft {version}...` - Downloading client (if needed)
+3. `Perfil padrão pronto.` - Initialization complete
+
+---
+
+## Usage Examples
+
+### Basic Initialization
+
+```javascript
+const { ensureDefaultProfile } = require('./services/profileService');
+
+// At launcher startup
+async function main() {
+  console.log('Initializing launcher...');
+  await ensureDefaultProfile();
+  console.log('Ready to launch!');
+}
+
+main().catch(console.error);
+```
+
+### With Progress Monitoring
+
+```javascript
+const { ipcMain } = require('electron');
+const { ensureDefaultProfile } = require('./services/profileService');
+
+ipcMain.on('status', (event, message) => {
+  console.log('Status:', message);
+  mainWindow.webContents.send('init-status', message);
+});
+
+try {
+  await ensureDefaultProfile();
+  mainWindow.webContents.send('init-complete');
+} catch (error) {
+  mainWindow.webContents.send('init-error', error.message);
+}
+```
+
+### Checking Initialization State
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { BASE_DIR } = require('./utils/paths');
+
+function isProfileReady() {
+  const configPath = path.join(BASE_DIR, 'config.json');
+  if (!fs.existsSync(configPath)) return false;
+  
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return config.defaultProfileReady === true;
+  } catch {
+    return false;
+  }
+}
+
+if (isProfileReady()) {
+  console.log('Profile is already initialized');
+} else {
+  console.log('Need to initialize profile');
+  await ensureDefaultProfile();
+}
+```
+
+---
+
+## Error Handling
+
+### Network Failures
+
+Network errors during client download are logged but don't prevent initialization:
+
+```javascript
+// Error handling (src/main/services/profileService.js:45-47)
+catch (err) {
+  log(`Could not download Minecraft client: ${err.message}`);
+}
+```
+
+The function continues and marks the profile as ready even if download fails. This allows:
+- Offline usage if client was previously downloaded
+- Retry on next launch attempt
+- Graceful degradation
+
+### Config Parsing Errors
+
+JSON parsing errors when loading config are silently handled:
+
+```javascript
+// Silent error handling (src/main/services/profileService.js:13)
+try { config = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch {}
+```
+
+Result: Empty config object, triggering fresh initialization.
+
+### Missing Directories
+
+Directories are created recursively, preventing errors:
+
+```javascript
+fs.mkdirSync(versionDir, { recursive: true });
+```
+
+---
+
+## Configuration Persistence
+
+Configuration is saved after initialization:
+
+```javascript
+// Save config (src/main/services/profileService.js:55)
+fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+```
+
+**Formatted output** (2-space indentation):
+
+```json
+{
+  "defaultProfileReady": true,
+  "username": "",
+  "ram": 4096,
+  "selectedProfile": "default",
+  "minecraftDir": "/home/user/.umulauncher"
+}
+```
+
+This allows:
+- Human-readable configuration
+- Easy manual editing if needed
+- Version control friendly format
+
+---
+
+## Dependencies
+
+The service relies on these utilities:
+
+- **paths.js**: `BASE_DIR`, `CONFIG`, `LATEST_MC_VERSION` constants
+- **ipcSender.js**: `send()` for status events, `log()` for console output
+- **download.js**: `downloadFile()` for HTTP downloads with progress
+- **http.js**: `httpGetJson()` for fetching JSON from Mojang API
+
+---
+
+## Integration with Launcher Flow
+
+Typical usage in main launcher process:
+
+```javascript
+const { app, BrowserWindow } = require('electron');
+const { ensureDefaultProfile } = require('./services/profileService');
+
+app.on('ready', async () => {
+  const mainWindow = new BrowserWindow({...});
+  
+  try {
+    // Initialize default profile before allowing launches
+    await ensureDefaultProfile();
+    
+    // Load main UI
+    mainWindow.loadFile('index.html');
+  } catch (error) {
+    console.error('Initialization failed:', error);
+    // Show error UI
+  }
+});
+```

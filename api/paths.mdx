@@ -1,0 +1,215 @@
+---
+title: 'paths.js'
+description: 'File system paths, constants, and directory management'
+---
+
+## Overview
+
+The `paths.js` module defines all file system paths, launcher configuration constants, and directory initialization for Umucraft Launcher.
+
+**Source:** `src/main/utils/paths.js`
+
+## Constants
+
+### BASE_DIR
+
+The root directory for all Umucraft Launcher data.
+
+```javascript
+const BASE_DIR = path.join(os.homedir(), '.UmuCraft')
+```
+
+**Type:** `string`
+
+**Value:** `~/.UmuCraft` (platform-specific home directory)
+
+**Defined at:** `src/main/utils/paths.js:6`
+
+All launcher data, including Java installations, Minecraft versions, mods, and configuration files, are stored under this directory.
+
+### CONFIG
+
+Configuration object containing launcher settings and remote URLs.
+
+```javascript
+const CONFIG = {
+  MANIFEST_URL: 'https://www.dropbox.com/scl/fi/2ayggbyej2fmvqc38ell1/manifest.json?rlkey=9sln2f4nxuwl7rsv04dh1y832&st=0d97hib4&dl=1',
+  DEFAULT_PROFILE: 'Default',
+}
+```
+
+**Type:** `object`
+
+**Defined at:** `src/main/utils/paths.js:8-11`
+
+<ParamField path="MANIFEST_URL" type="string">
+  The remote URL for the launcher manifest JSON file. This manifest contains available Minecraft versions, modpacks, and download URLs.
+</ParamField>
+
+<ParamField path="DEFAULT_PROFILE" type="string">
+  The default profile name used when no profile is specified. Value: `'Default'`
+</ParamField>
+
+### LATEST_MC_VERSION
+
+The latest supported Minecraft version.
+
+```javascript
+const LATEST_MC_VERSION = '1.21.4'
+```
+
+**Type:** `string`
+
+**Value:** `'1.21.4'`
+
+**Defined at:** `src/main/utils/paths.js:13`
+
+### JAVA_VERSIONS
+
+Mapping of Minecraft versions to required Java versions.
+
+```javascript
+const JAVA_VERSIONS = {
+  '1.17': { version: '17', major: 17 },
+  '1.18': { version: '17', major: 17 },
+  '1.19': { version: '17', major: 17 },
+  '1.20': { version: '21', major: 21 },
+  '1.21': { version: '21', major: 21 },
+}
+```
+
+**Type:** `object`
+
+**Defined at:** `src/main/utils/paths.js:15-21`
+
+Maps Minecraft version prefixes to their required Java runtime versions. Each entry contains:
+
+<ParamField path="version" type="string">
+  The Java version string (e.g., `'17'`, `'21'`)
+</ParamField>
+
+<ParamField path="major" type="number">
+  The Java major version number (e.g., `17`, `21`)
+</ParamField>
+
+#### Java Version Requirements
+
+- **Minecraft 1.17-1.19:** Requires Java 17
+- **Minecraft 1.20-1.21:** Requires Java 21
+
+#### Example Usage
+
+```javascript
+const { JAVA_VERSIONS } = require('./utils/paths');
+
+function getRequiredJava(mcVersion) {
+  const prefix = mcVersion.substring(0, 4); // '1.21.4' -> '1.21'
+  return JAVA_VERSIONS[prefix];
+}
+
+const javaInfo = getRequiredJava('1.21.4');
+console.log(javaInfo); // { version: '21', major: 21 }
+```
+
+## Functions
+
+### ensureDirectories()
+
+Creates all required launcher directories if they don't exist.
+
+```javascript
+function ensureDirectories()
+```
+
+**Returns:** `void`
+
+**Defined at:** `src/main/utils/paths.js:23-26`
+
+This function creates the following subdirectories under `BASE_DIR`:
+
+- `java` - Java runtime installations
+- `versions` - Minecraft version files
+- `mods` - Mod files
+- `modpacks` - Modpack configurations
+- `config` - Configuration files
+- `assets` - Game assets (textures, sounds, etc.)
+- `cache` - Temporary cached files
+- `libraries` - Minecraft and mod libraries
+- `logs` - Launcher and game logs
+
+#### Behavior
+
+- **Recursive Creation:** Uses `{ recursive: true }` option to create parent directories if needed (`src/main/utils/paths.js:25`)
+- **Idempotent:** Safe to call multiple times; directories that already exist are not modified
+- **Synchronous:** Blocks until all directories are created
+
+#### Example Usage
+
+```javascript
+const { ensureDirectories, BASE_DIR } = require('./utils/paths');
+const path = require('path');
+
+// Initialize launcher directories on first run
+ensureDirectories();
+
+// Now safe to write to launcher directories
+const modsDir = path.join(BASE_DIR, 'mods');
+const configDir = path.join(BASE_DIR, 'config');
+```
+
+## Directory Structure
+
+After calling `ensureDirectories()`, the complete directory structure is:
+
+```
+~/.UmuCraft/
+├── java/           # Java runtime installations
+├── versions/       # Minecraft client JARs and JSONs
+├── mods/           # Mod files (.jar)
+├── modpacks/       # Modpack definitions
+├── config/         # Configuration files
+├── assets/         # Game assets
+├── cache/          # Temporary files
+├── libraries/      # Minecraft and mod libraries
+└── logs/           # Launcher and game logs
+```
+
+## Usage Example
+
+```javascript
+const {
+  BASE_DIR,
+  CONFIG,
+  LATEST_MC_VERSION,
+  JAVA_VERSIONS,
+  ensureDirectories
+} = require('./utils/paths');
+const path = require('path');
+
+// Initialize directories
+ensureDirectories();
+
+// Build paths to specific resources
+const javaDir = path.join(BASE_DIR, 'java');
+const versionsDir = path.join(BASE_DIR, 'versions');
+const modsDir = path.join(BASE_DIR, 'mods');
+
+// Use configuration
+console.log(`Manifest URL: ${CONFIG.MANIFEST_URL}`);
+console.log(`Latest MC version: ${LATEST_MC_VERSION}`);
+
+// Get Java version for Minecraft 1.20
+const javaInfo = JAVA_VERSIONS['1.20'];
+console.log(`Minecraft 1.20 requires Java ${javaInfo.version}`);
+```
+
+## Dependencies
+
+- `path` - Path manipulation utilities
+- `os` - Operating system information (home directory)
+- `fs` - File system operations
+
+## Related
+
+- [Download Utility](/api/download) - Download files to launcher directories
+- [File Hash](/api/file-hash) - Verify downloaded files

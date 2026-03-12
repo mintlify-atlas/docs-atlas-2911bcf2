@@ -1,0 +1,154 @@
+---
+title: 'Launching the Game'
+description: 'Learn how to launch Minecraft through Umucraft Launcher'
+---
+
+## Overview
+
+Umucraft Launcher provides a streamlined process for launching Minecraft with automatic mod synchronization and profile management. The launcher handles version management, manifest loading, and game startup.
+
+## Before You Launch
+
+Before launching the game, ensure:
+
+- The manifest has been loaded successfully
+- You have an active internet connection
+- Your username is configured
+- A profile is selected
+
+<Note>
+The launcher automatically loads the manifest on startup. If you need to refresh it, use the **Refresh Manifest** button on the home page.
+</Note>
+
+## Launching Minecraft
+
+<Steps>
+  <Step title="Enter Your Username">
+    Type your Minecraft username in the **username-input** field. The launcher only accepts valid Minecraft characters (a-z, A-Z, 0-9, and underscores).
+    
+    <Warning>
+    If you try to launch without a username, the input field will be highlighted in red and you'll need to enter a valid username before proceeding.
+    </Warning>
+  </Step>
+
+  <Step title="Select Your Profile">
+    Choose your desired modpack profile from the **profile-select** dropdown. Each profile has specific Minecraft and Forge versions configured.
+    
+    The version badges will update automatically when you change profiles.
+  </Step>
+
+  <Step title="Click the Launch Button">
+    Click the **JOGAR** (Play) button to start the launch process. The button text will change to **PREPARANDO...** (Preparing) during startup.
+  </Step>
+
+  <Step title="Monitor Progress">
+    Watch the progress panel for real-time updates:
+    
+    - **Progress bar** shows overall completion percentage
+    - **Progress phase** displays the current operation
+    - **Log console** shows detailed log messages
+    
+    The launcher will:
+    1. Sync mods from the server
+    2. Download required game files
+    3. Launch Minecraft
+  </Step>
+
+  <Step title="Game Started">
+    When Minecraft launches successfully:
+    
+    - Progress phase shows "Minecraft iniciado!"
+    - Progress bar reaches 100%
+    - Log console displays the process ID (PID)
+    - Launch button changes to **EM JOGO** (In Game)
+    
+    <Info>
+    The launcher button will remain disabled for 5 seconds after launch to prevent accidental re-launches.
+    </Info>
+  </Step>
+</Steps>
+
+## Launch Process Details
+
+### Automatic Operations
+
+When you click the launch button, the launcher performs these operations automatically:
+
+```javascript
+const result = await window.launcher.syncAndLaunch({
+  config: appState.config,
+  manifest: appState.manifest,
+});
+```
+
+This includes:
+
+- **Configuration Collection**: Gathers all settings (RAM, directories, profile)
+- **Manifest Validation**: Ensures server manifest is loaded
+- **Mod Synchronization**: Downloads and updates mods to match server version
+- **Game Launch**: Starts Minecraft with the correct parameters
+
+### Progress Tracking
+
+The launcher provides real-time feedback through:
+
+- **Progress Panel**: Shows current phase and percentage
+- **Log Console**: Displays detailed operation logs
+- **Button States**: Visual feedback on launch status
+
+## Troubleshooting Launch Issues
+
+### Manifest Not Loaded
+
+If you see "Manifesto nao carregado. Verifique sua conexao e tente novamente":
+
+<Steps>
+  <Step title="Check Internet Connection">
+    Ensure you have an active internet connection.
+  </Step>
+  
+  <Step title="Refresh Manifest">
+    Click the **Refresh Manifest** button to reload server data.
+  </Step>
+  
+  <Step title="Restart Launcher">
+    If the issue persists, restart the launcher application.
+  </Step>
+</Steps>
+
+### Launch Errors
+
+If the launch fails:
+
+- Check the **log console** for specific error messages
+- The progress phase will display "Erro" (Error)
+- The launch button returns to **JOGAR** state
+- Review error details in the console to identify the issue
+
+<Warning>
+If a launch error occurs, check the log console for detailed error information before attempting to launch again.
+</Warning>
+
+## Username Validation
+
+The launcher enforces Minecraft username rules:
+
+```javascript
+$('username-input').value = $('username-input').value.replace(/[^a-zA-Z0-9_]/g, '');
+```
+
+**Valid characters**: Letters (a-z, A-Z), numbers (0-9), and underscores (_)
+
+**Invalid characters**: Spaces, special characters, and symbols are automatically removed.
+
+## Profile Selection
+
+Profiles represent different modpack configurations. When you change profiles:
+
+- The selected profile is saved to your configuration
+- Version badges update to reflect the profile's Minecraft and Forge versions
+- The next launch will use the newly selected profile's settings
+
+<Info>
+Profile changes take effect immediately and are persisted to your configuration file.
+</Info>

@@ -1,0 +1,133 @@
+---
+title: Introduction
+description: 'A custom Minecraft Forge launcher with automatic mod synchronization, Java installation, and server management'
+---
+
+## Welcome to Umucraft Launcher
+
+Umucraft Launcher is a custom Minecraft launcher built with Electron that streamlines the modded Minecraft experience for both players and server administrators. It handles the complexity of mod management, Java installation, and game launching through an intuitive desktop application.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card
+    title="Automatic Mod Sync"
+    icon="download"
+    href="/players/mod-management"
+  >
+    Mods are automatically downloaded and updated based on server manifests with MD5 verification
+  </Card>
+  <Card
+    title="Java Auto-Install"
+    icon="coffee"
+    href="/architecture/main-process"
+  >
+    Detects and installs the correct Java version automatically using Adoptium JDK
+  </Card>
+  <Card
+    title="Forge Integration"
+    icon="hammer"
+    href="/api/forge-installer"
+  >
+    Seamlessly installs and manages Minecraft Forge for modded gameplay
+  </Card>
+  <Card
+    title="Server Management"
+    icon="server"
+    href="/players/server-connection"
+  >
+    Built-in server ping and status monitoring for quick connection checks
+  </Card>
+  <Card
+    title="Manifest-Based"
+    icon="file-code"
+    href="/admins/manifest-configuration"
+  >
+    Centralized mod distribution through JSON manifests hosted anywhere
+  </Card>
+  <Card
+    title="Modern UI"
+    icon="window"
+    href="/architecture/renderer-process"
+  >
+    Clean Electron interface with sidebar navigation and six dedicated tabs
+  </Card>
+</CardGroup>
+
+## Who is this for?
+
+### Players
+
+Get up and running with modded Minecraft in minutes. The launcher handles Java installation, mod downloads, and game launching automatically. Just enter your username and click play.
+
+### Server Administrators
+
+Distribute mod packs effortlessly. Update your manifest file, and all players automatically receive the latest mods on their next launch. No manual distribution required.
+
+### Developers
+
+Built on a clean, modular architecture with separated concerns. The codebase uses Electron with CommonJS for the main process and ES modules for the renderer, making it easy to extend and customize.
+
+## Quick Start
+
+<CardGroup cols={2}>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Download and install the launcher for Windows, Linux, or macOS
+  </Card>
+  <Card
+    title="Quickstart Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Launch your first game in under 5 minutes
+  </Card>
+  <Card
+    title="Admin Setup"
+    icon="gear"
+    href="/admins/setup"
+  >
+    Configure the launcher for your Minecraft server
+  </Card>
+  <Card
+    title="Architecture"
+    icon="sitemap"
+    href="/architecture/overview"
+  >
+    Understand how the launcher works under the hood
+  </Card>
+</CardGroup>
+
+## Technical Overview
+
+Umucraft Launcher is built with:
+
+- **Electron 28** for cross-platform desktop functionality
+- **Node.js** for backend services (main process)
+- **Vanilla JavaScript** with ES modules for the UI (renderer process)
+- **Adoptium JDK** for automatic Java installation
+- **Minecraft Forge** installer integration
+
+The launcher manages a complete Minecraft installation at `~/.UmuCraft/`, including Java, game files, mods, assets, and configuration.
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card
+    title="Troubleshooting"
+    icon="life-ring"
+    href="/development/troubleshooting"
+  >
+    Common issues and solutions
+  </Card>
+  <Card
+    title="GitHub"
+    icon="github"
+    href="https://github.com/andrecodato/UmucraftLauncher"
+  >
+    View source code and report issues
+  </Card>
+</CardGroup>

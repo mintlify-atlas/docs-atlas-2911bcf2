@@ -1,0 +1,286 @@
+---
+title: Manifest Configuration
+description: Create and configure the manifest.json file for mod distribution
+---
+
+The `manifest.json` file is the heart of Umucraft Launcher's mod synchronization system. It tells the launcher what mods to download, which Minecraft and Forge versions to use, and displays news to your players.
+
+## Manifest Schema
+
+Here's the complete structure of a manifest.json file:
+
+```json
+{
+  "serverName": "MyServer",
+  "description": "Servidor survival com mods de tecnologia e magia",
+  "tags": ["Forge 1.20.1", "Survival", "PvE"],
+
+  "profiles": {
+    "Survival Tech": {
+      "minecraftVersion": "1.20.1",
+      "forgeVersion": "47.2.0",
+      "modsVersion": "1.0.0",
+      "modsZipUrl": "https://www.dropbox.com/scl/fi/XXXXX/mods.zip?rlkey=XXXXX&dl=1",
+      "modsZipMd5": "abc123def456abc123def456abc123de"
+    },
+    "Adventure Pack": {
+      "minecraftVersion": "1.20.1",
+      "forgeVersion": "47.2.0",
+      "modsVersion": "1.0.0",
+      "modsZipUrl": "https://www.dropbox.com/scl/fi/YYYYY/mods-adventure.zip?rlkey=YYYYY&dl=1",
+      "modsZipMd5": "def456abc123def456abc123def456ab"
+    }
+  },
+
+  "news": [
+    {
+      "title": "Atualização de mods - v2.3",
+      "date": "2024-03-10",
+      "tag": "update",
+      "pinned": true,
+      "body": "Adicionamos o mod Create 0.5.1 e atualizamos o JEI para a versão mais recente. Reinicie o launcher para baixar automaticamente!"
+    },
+    {
+      "title": "Manutenção programada",
+      "date": "2024-03-08",
+      "tag": "maintenance",
+      "body": "O servidor ficará offline domingo das 02h às 04h para manutenção. Aproveitem para explorar o mundo novo!"
+    },
+    {
+      "title": "Evento de construção!",
+      "date": "2024-03-05",
+      "tag": "event",
+      "body": "Este fim de semana teremos um evento de construção temática. Os 3 melhores serão premiados com rank VIP!"
+    }
+  ]
+}
+```
+
+## Field Descriptions
+
+### Server Information
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `serverName` | string | Your server's name (displayed in the launcher) |
+| `description` | string | Short description of your server |
+| `tags` | array | Tags displayed as badges (e.g., Forge version, modpack type) |
+
+### Profiles
+
+Profiles allow you to offer multiple modpack configurations. Each profile contains:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `minecraftVersion` | string | Yes | Minecraft version (e.g., "1.20.1") |
+| `forgeVersion` | string | Yes | Forge version (e.g., "47.2.0") |
+| `modsVersion` | string | Yes | Your modpack version (e.g., "1.0.0") |
+| `modsZipUrl` | string | Yes | Direct download URL for the mods .zip file |
+| `modsZipMd5` | string | Yes | MD5 hash of the .zip file for verification |
+
+<Note>
+The profile name (e.g., "Survival Tech") appears in the profile dropdown in the launcher. Players can switch between profiles if you offer multiple modpacks.
+</Note>
+
+### News
+
+News items are displayed on the launcher's home page. Each news item supports:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | Yes | News headline |
+| `date` | string | Yes | Date in YYYY-MM-DD format |
+| `tag` | string | Yes | One of: `update`, `maintenance`, `event`, `info` |
+| `pinned` | boolean | No | If true, shows at the top of the news feed |
+| `body` | string | Yes | Full news content (supports line breaks) |
+
+**Available news tags:**
+- `update` - Mod updates, version changes
+- `maintenance` - Server downtime, maintenance windows
+- `event` - In-game events, competitions
+- `info` - General announcements
+
+## Creating Your Manifest
+
+<Steps>
+  <Step title="Prepare your mod pack">
+    1. Gather all your mod `.jar` files in a single folder
+    2. Test them on your server to ensure compatibility
+    3. Do **not** include config files in the zip (those go in the launcher separately)
+  </Step>
+
+  <Step title="Create the mods.zip file">
+    Compress all mod `.jar` files into a single `.zip` archive:
+    
+    ```bash
+    # On Linux/Mac
+    zip -r mods.zip *.jar
+    
+    # On Windows
+    # Use right-click > Send to > Compressed (zipped) folder
+    ```
+  </Step>
+
+  <Step title="Upload to hosting service">
+    Choose a hosting option and upload your `mods.zip`:
+    
+    <CodeGroup>
+      ```text Dropbox
+      1. Upload mods.zip to Dropbox
+      2. Click "Share" and create a link
+      3. Copy the link and replace ?dl=0 with ?dl=1
+      
+      Example:
+      Before: https://www.dropbox.com/scl/fi/XXX/mods.zip?rlkey=YYY&dl=0
+      After:  https://www.dropbox.com/scl/fi/XXX/mods.zip?rlkey=YYY&dl=1
+      ```
+      
+      ```text GitHub Releases
+      1. Create a new release in your GitHub repository
+      2. Upload mods.zip as a release asset
+      3. Right-click the file and copy the download URL
+      
+      Example:
+      https://github.com/user/repo/releases/download/v1.0.0/mods.zip
+      ```
+      
+      ```text Custom Server
+      1. Upload mods.zip to your web server
+      2. Ensure it's accessible via HTTP/HTTPS
+      3. Use the direct URL
+      
+      Example:
+      https://files.myserver.com/mods.zip
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Generate the manifest.json">
+    Use the included script to generate your manifest:
+    
+    ```bash
+    node scripts/generate-manifest.js ./mods.zip "<YOUR_DROPBOX_URL>"
+    ```
+    
+    With custom options:
+    ```bash
+    node scripts/generate-manifest.js \
+      ./mods.zip \
+      "https://www.dropbox.com/scl/fi/XXX/mods.zip?rlkey=YYY&dl=1" \
+      ./manifest.json \
+      "Default" \
+      "1.0.0"
+    ```
+    
+    **Script parameters:**
+    1. Path to your mods.zip file
+    2. Direct download URL for the zip
+    3. Output path (default: `./manifest.json`)
+    4. Profile name (default: `"Default"`)
+    5. Version number (default: `"1.0.0"`)
+  </Step>
+
+  <Step title="Customize the manifest">
+    Edit the generated `manifest.json` to add:
+    - Server name and description
+    - Tags
+    - Additional profiles (if needed)
+    - News items
+    
+    The script only generates the profile section with technical details.
+  </Step>
+
+  <Step title="Host the manifest.json">
+    Upload your manifest.json to a publicly accessible URL.
+    
+    <CodeGroup>
+      ```text GitHub (Recommended)
+      1. Create a public GitHub repository
+      2. Upload manifest.json to the repository
+      3. Get the raw URL:
+      
+      https://raw.githubusercontent.com/<user>/<repo>/main/manifest.json
+      ```
+      
+      ```text Dropbox
+      1. Upload manifest.json to Dropbox
+      2. Create a share link
+      3. Replace ?dl=0 with ?dl=1
+      
+      https://www.dropbox.com/scl/fi/XXX/manifest.json?rlkey=YYY&dl=1
+      ```
+      
+      ```text Custom Server
+      Upload to your web server with HTTPS:
+      
+      https://files.myserver.com/manifest.json
+      ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Configuring MANIFEST_URL
+
+Once your manifest.json is hosted, you need to configure the launcher to fetch it.
+
+Edit `src/main/utils/paths.js` and update the `CONFIG` object:
+
+```javascript src/main/utils/paths.js
+const CONFIG = {
+  MANIFEST_URL: 'https://raw.githubusercontent.com/youruser/yourrepo/main/manifest.json',
+  DEFAULT_PROFILE: 'Default',
+};
+```
+
+**Fields:**
+- `MANIFEST_URL` - The public URL where your manifest.json is hosted
+- `DEFAULT_PROFILE` - The default profile name that players will use (must match a profile in your manifest)
+
+<Warning>
+After changing `MANIFEST_URL`, you must rebuild the launcher and redistribute it to your players. The URL is compiled into the launcher executable.
+</Warning>
+
+## Multiple Profiles
+
+You can offer multiple modpack configurations by adding more profiles:
+
+```json
+"profiles": {
+  "Tech Modpack": {
+    "minecraftVersion": "1.20.1",
+    "forgeVersion": "47.2.0",
+    "modsVersion": "1.0.0",
+    "modsZipUrl": "https://example.com/tech-mods.zip",
+    "modsZipMd5": "..."
+  },
+  "Magic Modpack": {
+    "minecraftVersion": "1.20.1",
+    "forgeVersion": "47.2.0",
+    "modsVersion": "1.0.0",
+    "modsZipUrl": "https://example.com/magic-mods.zip",
+    "modsZipMd5": "..."
+  }
+}
+```
+
+Players can select their preferred profile from a dropdown in the launcher settings.
+
+## Manifest Caching
+
+The launcher caches the manifest in `~/.UmuCraft/cache/` to support offline mode. When players open the launcher:
+
+1. The launcher attempts to fetch the latest manifest from `MANIFEST_URL`
+2. If successful, it updates the cache and checks for mod updates
+3. If offline or the URL is unreachable, it uses the cached version
+4. Players can still launch the game with their existing mods
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Update Mods" icon="refresh" href="/admins/mod-updates">
+    Learn how to update mods for your players
+  </Card>
+  <Card title="Build the Launcher" icon="hammer" href="/admins/building">
+    Create distributable executables for your players
+  </Card>
+</CardGroup>

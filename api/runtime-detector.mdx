@@ -1,0 +1,486 @@
+---
+title: 'RuntimeDetector'
+description: 'Multi-platform Java runtime detection with version validation'
+---
+
+## Overview
+
+The `RuntimeDetector` class implements comprehensive Java runtime detection across Windows, Linux, and macOS. It searches bundled installations, system PATH, and common installation directories, validating each candidate against Minecraft's Java 17+ requirement.
+
+**Source:** `src/main/bootstrap/detector.js`
+
+## Constructor
+
+```javascript
+const detector = new RuntimeDetector(logger, baseDir);
+```
+
+<ParamField path="logger" type="BootstrapLogger" required>
+  Logger instance for detection progress and results
+</ParamField>
+
+<ParamField path="baseDir" type="string" required>
+  Base directory for UmuCraft data (typically `~/.UmuCraft`)
+</ParamField>
+
+**Source:** `src/main/bootstrap/detector.js:8-13`
+
+## Properties
+
+<ResponseField name="logger" type="BootstrapLogger">
+  Logger instance for output
+</ResponseField>
+
+<ResponseField name="baseDir" type="string">
+  Base directory path
+</ResponseField>
+
+<ResponseField name="javaDir" type="string">
+  Path to bundled Java directory: `{baseDir}/java`
+</ResponseField>
+
+## Static Methods
+
+### parseMajorVersion()
+
+Parses the major Java version from `java -version` output. Supports all major Java vendors including Oracle Java, OpenJDK, Temurin, Zulu, Corretto, and GraalVM.
+
+```javascript
+const version = RuntimeDetector.parseMajorVersion(output);
+```
+
+<ParamField path="output" type="string" required>
+  Output from `java -version` or `java --version` command
+</ParamField>
+
+**Returns:** `number`
+
+Major version number (e.g., `17`, `21`) or `0` if unparseable
+
+**Source:** `src/main/bootstrap/detector.js:15-41`
+
+**Supported patterns:**
+
+1. **Pattern 1:** `version "X.Y.Z"` (most common)
+   - Example: `openjdk version "21.0.2"`
+   - Example: `java version "1.8.0_381"` (returns `8` for legacy format)
+
+2. **Pattern 2:** `openjdk 17` or `java 21` (without quotes)
+   - Example: `openjdk 17.0.10 2024-01-16`
+
+3. **Pattern 3:** Path-like output with `jdk-17` or `jre-21`
+   - Example: `/usr/lib/jvm/jdk-21/bin/java`
+
+**Example:**
+
+```javascript
+const output1 = 'openjdk version "21.0.2" 2024-01-16';
+const v1 = RuntimeDetector.parseMajorVersion(output1);
+console.log(v1); // 21
+
+const output2 = 'java version "1.8.0_381"';
+const v2 = RuntimeDetector.parseMajorVersion(output2);
+console.log(v2); // 8
+
+const output3 = 'openjdk 17.0.10 2024-01-16';
+const v3 = RuntimeDetector.parseMajorVersion(output3);
+console.log(v3); // 17
+```
+
+## Instance Methods
+
+### validateExecutable()
+
+Validates a Java executable by running `java -version` and checking the version meets the Java 17+ requirement.
+
+```javascript
+const result = detector.validateExecutable(javaPath);
+```
+
+<ParamField path="javaPath" type="string" required>
+  Absolute path to java executable (e.g., `/usr/bin/java` or `C:\Program Files\Java\bin\java.exe`)
+</ParamField>
+
+**Returns:** `Object`
+
+<ResponseField name="valid" type="boolean" required>
+  Whether the executable is valid (exists, runs, version >= 17)
+</ResponseField>
+
+<ResponseField name="version" type="number">
+  Parsed major version (only present if executable ran successfully)
+</ResponseField>
+
+<ResponseField name="path" type="string" required>
+  The provided java path (echoed back)
+</ResponseField>
+
+<ResponseField name="output" type="string">
+  First line of `java -version` output (only if valid)
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message (only if `valid: false`). Possible errors:
+  - `File not found` - Path does not exist
+  - `Version X < 17` - Java version too old
+  - Execution error message - Failed to run java command
+</ResponseField>
+
+**Source:** `src/main/bootstrap/detector.js:43-76`
+
+**Example:**
+
+```javascript
+// Valid Java 21
+const result1 = detector.validateExecutable('/usr/lib/jvm/java-21/bin/java');
+// {
+//   valid: true,
+//   version: 21,
+//   path: '/usr/lib/jvm/java-21/bin/java',
+//   output: 'openjdk version "21.0.2" 2024-01-16'
+// }
+
+// Invalid - too old
+const result2 = detector.validateExecutable('/usr/bin/java');
+// {
+//   valid: false,
+//   version: 8,
+//   path: '/usr/bin/java',
+//   error: 'Version 8 < 17'
+// }
+
+// Invalid - not found
+const result3 = detector.validateExecutable('/does/not/exist');
+// {
+//   valid: false,
+//   path: '/does/not/exist',
+//   error: 'File not found'
+// }
+```
+
+**Execution details:**
+- Timeout: 10 seconds (`EXEC_TIMEOUT`)
+- Command: `"{javaPath}" -version 2>&1`
+- Streams: stderr and stdout are merged (version info goes to stderr)
+- Windows: `windowsHide: true` prevents console flash
+
+**Source:** `src/main/bootstrap/detector.js:6,55-61`
+
+---
+
+### findJavaExecutables()
+
+Recursively searches a directory for Java executables (`java` or `java.exe`).
+
+```javascript
+const executables = detector.findJavaExecutables(dir, maxDepth);
+```
+
+<ParamField path="dir" type="string" required>
+  Root directory to search
+</ParamField>
+
+<ParamField path="maxDepth" type="number" default="5">
+  Maximum recursion depth to prevent infinite loops
+</ParamField>
+
+**Returns:** `string[]`
+
+Array of absolute paths to java executables found in `bin/` subdirectories
+
+**Source:** `src/main/bootstrap/detector.js:78-102`
+
+**Search criteria:**
+- Filename: `java.exe` on Windows, `java` on Linux/macOS
+- Must be inside a directory named `bin`
+- Recursively searches up to `maxDepth` levels
+- Silently skips directories with permission errors
+
+**Example:**
+
+```javascript
+const candidates = detector.findJavaExecutables('/usr/lib/jvm');
+// [
+//   '/usr/lib/jvm/java-17-openjdk/bin/java',
+//   '/usr/lib/jvm/java-21-openjdk/bin/java',
+//   '/usr/lib/jvm/java-8-openjdk/bin/java'
+// ]
+```
+
+---
+
+### detectBundled()
+
+Searches for bundled Java installations in `{baseDir}/java/`.
+
+```javascript
+const result = detector.detectBundled();
+```
+
+**Returns:** `Object | null`
+
+Returns runtime object if valid Java 17+ found, otherwise `null`
+
+<ResponseField name="valid" type="boolean">
+  Always `true` when returned
+</ResponseField>
+
+<ResponseField name="version" type="number">
+  Major Java version
+</ResponseField>
+
+<ResponseField name="path" type="string">
+  Absolute path to java executable
+</ResponseField>
+
+<ResponseField name="output" type="string">
+  First line of `java -version` output
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  Always `"bundled"`
+</ResponseField>
+
+**Source:** `src/main/bootstrap/detector.js:104-128`
+
+**Example:**
+
+```javascript
+const result = detector.detectBundled();
+if (result) {
+  console.log(`Found bundled Java ${result.version} at ${result.path}`);
+} else {
+  console.log('No bundled Java found');
+}
+```
+
+---
+
+### detectSystem()
+
+Checks if Java is available via system PATH using the `java` command.
+
+```javascript
+const result = detector.detectSystem();
+```
+
+**Returns:** `Object | null`
+
+Returns runtime object if valid Java 17+ found in PATH, otherwise `null`
+
+<ResponseField name="valid" type="boolean">
+  Always `true` when returned
+</ResponseField>
+
+<ResponseField name="version" type="number">
+  Major Java version
+</ResponseField>
+
+<ResponseField name="path" type="string">
+  Resolved absolute path to java executable (via `which java` or `where java`)
+</ResponseField>
+
+<ResponseField name="output" type="string">
+  First line of `java -version` output
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  Always `"system"`
+</ResponseField>
+
+**Source:** `src/main/bootstrap/detector.js:130-170`
+
+**Resolution strategy:**
+- Runs `java -version` to test availability
+- Resolves actual path using:
+  - **Windows:** `where java` (returns first match)
+  - **Linux/macOS:** `which java` (follows symlinks)
+- Falls back to `"java"` if resolution fails
+
+**Example:**
+
+```javascript
+const result = detector.detectSystem();
+if (result) {
+  console.log(`System Java ${result.version} at ${result.path}`);
+  // System Java 21 at /usr/bin/java
+} else {
+  console.log('No compatible system Java');
+}
+```
+
+---
+
+### detectCommonPaths()
+
+Scans platform-specific common installation directories for Java installations.
+
+```javascript
+const result = detector.detectCommonPaths();
+```
+
+**Returns:** `Object | null`
+
+Returns runtime object if valid Java 17+ found, otherwise `null`
+
+<ResponseField name="valid" type="boolean">
+  Always `true` when returned
+</ResponseField>
+
+<ResponseField name="version" type="number">
+  Major Java version
+</ResponseField>
+
+<ResponseField name="path" type="string">
+  Absolute path to java executable
+</ResponseField>
+
+<ResponseField name="output" type="string">
+  First line of `java -version` output
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  Always `"common"`
+</ResponseField>
+
+**Source:** `src/main/bootstrap/detector.js:172-223`
+
+**Search locations:**
+
+#### Windows
+
+```javascript
+const pf = process.env['ProgramFiles'] || 'C:\\Program Files';
+const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+```
+
+- `{ProgramFiles}\Java`
+- `{ProgramFiles}\Eclipse Adoptium`
+- `{ProgramFiles}\AdoptOpenJDK`
+- `{ProgramFiles}\Zulu`
+- `{ProgramFiles}\Microsoft`
+- `{ProgramFiles}\BellSoft`
+- `{ProgramFiles}\Amazon Corretto`
+- `{ProgramFiles}\Common Files\Oracle\Java`
+- `{ProgramFiles(x86)}\Java`
+
+**Source:** `src/main/bootstrap/detector.js:180-193`
+
+#### Linux
+
+- `/usr/lib/jvm`
+- `/usr/java`
+- `/opt/java`
+- `~/.sdkman/candidates/java` (SDKMAN! installations)
+
+**Source:** `src/main/bootstrap/detector.js:194-198`
+
+#### macOS
+
+- `/Library/Java/JavaVirtualMachines`
+- `/usr/local/opt/openjdk` (Homebrew)
+- `~/.sdkman/candidates/java` (SDKMAN! installations)
+
+**Source:** `src/main/bootstrap/detector.js:199-202`
+
+**Version preference:**
+
+Candidates are sorted reverse-alphabetically to prefer higher versions:
+
+```javascript
+candidates.sort((a, b) => b.localeCompare(a));
+```
+
+This heuristic means `/usr/lib/jvm/java-21` is checked before `/usr/lib/jvm/java-17`.
+
+**Source:** `src/main/bootstrap/detector.js:210`
+
+**Example:**
+
+```javascript
+const result = detector.detectCommonPaths();
+if (result) {
+  console.log(`Found Java ${result.version} at ${result.path}`);
+  // Found Java 21 at /usr/lib/jvm/java-21-openjdk/bin/java
+}
+```
+
+---
+
+### detect()
+
+Runs the complete detection pipeline: bundled → system → common paths.
+
+```javascript
+const result = detector.detect();
+```
+
+**Returns:** `Object | null`
+
+Returns runtime object from first successful detection step, or `null` if no compatible Java found
+
+<ResponseField name="valid" type="boolean">
+  Always `true` when returned
+</ResponseField>
+
+<ResponseField name="version" type="number">
+  Major Java version
+</ResponseField>
+
+<ResponseField name="path" type="string">
+  Absolute path to java executable
+</ResponseField>
+
+<ResponseField name="output" type="string">
+  First line of `java -version` output
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  Detection source: `"bundled"`, `"system"`, or `"common"`
+</ResponseField>
+
+**Source:** `src/main/bootstrap/detector.js:225-240`
+
+**Example:**
+
+```javascript
+const RuntimeDetector = require('./bootstrap/detector');
+const BootstrapLogger = require('./bootstrap/logger');
+
+const logger = new BootstrapLogger('/home/user/.UmuCraft');
+const detector = new RuntimeDetector(logger, '/home/user/.UmuCraft');
+
+const result = detector.detect();
+
+if (result) {
+  console.log(`Java ${result.version} detected`);
+  console.log(`Path: ${result.path}`);
+  console.log(`Source: ${result.source}`);
+  console.log(`Output: ${result.output}`);
+} else {
+  console.log('No compatible Java runtime found');
+  console.log('Will need to download and install');
+}
+```
+
+## Version Compatibility
+
+All detection methods validate that the Java version meets Minecraft's requirement:
+
+```javascript
+if (version >= 17) {
+  return { valid: true, version, path: javaPath, output: firstLine };
+}
+return { valid: false, version, path: javaPath, error: `Version ${version} < 17` };
+```
+
+**Minimum required version:** Java 17
+
+**Recommended version:** Java 21 (automatically installed if no compatible runtime found)
+
+**Source:** `src/main/bootstrap/detector.js:68-71`
+
+## See Also
+
+- [BootstrapController](/api/bootstrap-controller) - Bootstrap orchestration
+- [Java Installer](/api/java-installer) - Adoptium JDK installation
