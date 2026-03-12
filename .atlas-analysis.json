@@ -1,0 +1,123 @@
+{
+  "projectType": "frontend",
+  "projectName": "Umucraft Launcher",
+  "projectDescription": "Custom Minecraft Forge launcher with automatic mod synchronization, Java installation, and server management built with Electron",
+  "theme": "almond",
+  "primaryColor": "#8B5CF6",
+  "lightColor": "#A78BFA",
+  "darkColor": "#6D28D9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "For Players",
+            "pages": [
+              "players/launching-game",
+              "players/mod-management",
+              "players/server-connection",
+              "players/settings"
+            ]
+          },
+          {
+            "group": "For Server Admins",
+            "pages": [
+              "admins/setup",
+              "admins/manifest-configuration",
+              "admins/mod-updates",
+              "admins/server-configuration"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/main-process",
+              "architecture/renderer-process",
+              "architecture/ipc-communication"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/building",
+              "development/customization",
+              "development/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Services",
+            "pages": [
+              "api/minecraft-launcher",
+              "api/mod-sync-service",
+              "api/forge-installer",
+              "api/profile-service"
+            ]
+          },
+          {
+            "group": "Bootstrap System",
+            "pages": [
+              "api/bootstrap-controller",
+              "api/runtime-detector",
+              "api/java-installer"
+            ]
+          },
+          {
+            "group": "IPC Handlers",
+            "pages": [
+              "api/ipc-overview",
+              "api/launcher-ipc",
+              "api/config-ipc",
+              "api/server-ipc"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/download",
+              "api/file-hash",
+              "api/paths"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automatic mod synchronization with MD5 verification",
+    "Automatic Java detection and installation (Adoptium JDK)",
+    "Forge installer integration for modded Minecraft",
+    "Server ping and status monitoring",
+    "Custom Electron UI with sidebar navigation",
+    "Manifest-based mod distribution system",
+    "RAM allocation and game settings management"
+  ],
+  "publicApiSurface": [
+    "launchMinecraft()",
+    "syncMods()",
+    "installForge()",
+    "ensureDefaultProfile()",
+    "BootstrapController.run()",
+    "RuntimeDetector.detect()",
+    "downloadFile()",
+    "fileHash()",
+    "serverPing()",
+    "fetchManifest()",
+    "loadConfig()",
+    "saveConfig()"
+  ]
+}
